@@ -1,0 +1,556 @@
+@import "tailwindcss";
+
+/* Aether Mixer — Glassy Player Widget Edition */
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  background: #e8e4df;
+  min-height: 100vh;
+  font-family: 'Noto Sans SC', system-ui, sans-serif;
+}
+
+::selection {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* ——— Page background ——— */
+.page-bg {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: #e8e4df;
+}
+
+/* ——— Player Widget Shell (4:3 glassy) ——— */
+.player-widget {
+  position: relative;
+  width: 520px;
+  aspect-ratio: 4 / 3;
+  border-radius: 28px;
+  overflow: hidden;
+  border: 2.5px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 8px 60px rgba(0, 0, 0, 0.14),
+    0 2px 20px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: #0a0a0f;
+}
+
+/* Glassy highlight overlay */
+.player-widget::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 29px;
+  background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.35) 0%,
+      rgba(255, 255, 255, 0.08) 40%,
+      rgba(255, 255, 255, 0.02) 60%,
+      rgba(255, 255, 255, 0.15) 100%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.player-widget>* {
+  position: relative;
+  z-index: 1;
+}
+
+/* ——— Player Inner (default state) ——— */
+.player-inner {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+
+.player-image {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: filter 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.player-watermark {
+  position: absolute;
+  bottom: 20px;
+  left: 24px;
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 200;
+  letter-spacing: 0.2em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* ——— Hover CTA wrapper ——— */
+.player-cta-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+/* ——— Apple Liquid Glass Button ——— */
+.liquid-glass-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(40px) saturate(2);
+  -webkit-backdrop-filter: blur(40px) saturate(2);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.liquid-glass-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 6px 32px rgba(0, 0, 0, 0.16),
+    0 1px 6px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  transform: scale(1.03);
+}
+
+.liquid-glass-btn:active {
+  transform: scale(0.97);
+}
+
+/* ——— Prompt View (inside widget) ——— */
+.prompt-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 28px 20px;
+  overflow-y: auto;
+}
+
+.prompt-heading {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  margin: 0 0 14px 0;
+}
+
+.prompt-textarea {
+  width: 100%;
+  height: 72px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 14px 16px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-weight: 300;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  transition: border-color 0.3s ease;
+}
+
+.prompt-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.prompt-textarea:focus {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.prompt-generate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px;
+  margin-top: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.prompt-generate-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ——— Surprise Me ——— */
+.surprise-section {
+  margin-top: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.surprise-label {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin: 0 0 10px 0;
+}
+
+.surprise-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.surprise-chip {
+  padding: 5px 12px;
+  border-radius: 100px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  font-weight: 300;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+
+.surprise-chip:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.prompt-back-btn {
+  margin-top: 10px;
+  padding: 6px 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  align-self: flex-start;
+}
+
+.prompt-back-btn:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ——— Loading View ——— */
+.loading-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(255, 255, 255, 0.45);
+}
+
+.loading-msg {
+  margin-top: 16px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+/* ——— Error Toast ——— */
+.error-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(120, 20, 20, 0.9);
+  backdrop-filter: blur(12px);
+  padding: 10px 20px;
+  border-radius: 14px;
+  font-size: 11px;
+  color: rgba(255, 200, 200, 0.95);
+  border: 1px solid rgba(200, 80, 80, 0.3);
+  white-space: nowrap;
+}
+
+/* ——————————————————————————————————
+   Scene View (full-page)
+   —————————————————————————————————— */
+.scene-page {
+  position: fixed;
+  inset: 0;
+  background: #e8e4df;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  z-index: 50;
+}
+
+.scene-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #0a0a0f;
+  border-radius: 28px;
+  overflow: hidden;
+  border: 2.5px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 12px 80px rgba(0, 0, 0, 0.18),
+    0 4px 30px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.scene-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.15) 0%,
+      rgba(255, 255, 255, 0.03) 35%,
+      transparent 55%,
+      rgba(255, 255, 255, 0.06) 100%);
+  z-index: 60;
+  pointer-events: none;
+}
+
+.scene-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.scene-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.scene-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 24px 28px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.scene-title {
+  font-size: 17px;
+  font-weight: 200;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
+  margin: 0;
+}
+
+.scene-rebuild-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: color 0.3s ease;
+}
+
+.scene-rebuild-btn:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.scene-waveform {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 24px;
+  z-index: 10;
+}
+
+.scene-wave-bar {
+  width: 2px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  transform-origin: center;
+}
+
+.scene-mixer-area {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+/* ——— Liquid Glass Settings Icon ——— */
+.glass-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+}
+
+.glass-icon:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
+}
+
+.glass-icon:active {
+  transform: scale(0.95);
+}
+
+/* ——— Mixer Panel (frosted glass) ——— */
+.mixer-panel {
+  background: rgba(25, 25, 30, 0.6);
+  backdrop-filter: blur(32px) saturate(1.6);
+  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 16px;
+  width: 280px;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.mixer-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0 0 12px 0;
+}
+
+.mixer-empty {
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 11px;
+  margin: 0;
+}
+
+.mixer-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mixer-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mixer-track-name {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  width: 56px;
+  flex-shrink: 0;
+}
+
+.mixer-slider {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+.mixer-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+
+.mixer-track-pct {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9px;
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.mixer-track-dismiss {
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.mixer-track-dismiss:hover {
+  color: rgba(255, 255, 255, 0.65);
+}
