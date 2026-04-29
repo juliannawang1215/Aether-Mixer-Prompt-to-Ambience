@@ -2,7 +2,7 @@
  * Aether Mixer v7.0 — Glassy Player Widget
  * 奶白背景 → 4:3 glassy 播放器 → hover 高斯模糊 + Liquid Glass CTA → prompt 输入 → 沉浸场景
  */
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, RotateCcw, Volume2, X, SlidersHorizontal } from 'lucide-react';
 import { useAetherAudio } from './useAetherAudio';
@@ -64,6 +64,12 @@ export default function App() {
   const audioInitRef = useRef(false);
 
   const { init, applyMix, setTrackGain, startTracks, TRACK_KEYS } = useAetherAudio();
+
+  // On touch devices where hover doesn't exist, show the CTA by default.
+  useEffect(() => {
+    const mql = window.matchMedia?.('(hover: none)');
+    if (mql?.matches) setHovered(true);
+  }, []);
 
   const ensureAudio = useCallback(() => {
     if (!audioInitRef.current) {
@@ -154,7 +160,6 @@ Output ONLY valid JSON, no markdown.`;
   if (step === 'scene' && scene) {
     return (
       <>
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@200;300;400;500&display=swap" rel="stylesheet" />
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1.2, ease }} className="scene-page">
           <div className="scene-frame">
             <motion.div
@@ -168,9 +173,18 @@ Output ONLY valid JSON, no markdown.`;
 
             {/* Top bar */}
             <div className="scene-top-bar">
-              <h1 className="scene-title" style={{ fontFamily: "'Noto Sans SC', sans-serif" }}>
-                {scene.title}
-              </h1>
+              <div className="scene-title-block">
+                <h1 className="scene-title">{scene.title}</h1>
+                {Array.isArray(scene.tags) && scene.tags.length > 0 && (
+                  <div className="scene-tags" aria-label="Atmosphere tags">
+                    {scene.tags.slice(0, 6).map((t) => (
+                      <span key={t} className="scene-tag">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button onClick={backToPlayer} className="scene-rebuild-btn">
                 <RotateCcw size={11} />
                 Rebuild
@@ -234,8 +248,6 @@ Output ONLY valid JSON, no markdown.`;
   // ——————————— Player / Prompt / Loading Widget ———————————
   return (
     <div className="page-bg">
-      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@200;300;400;500&display=swap" rel="stylesheet" />
-
       <div className="player-widget">
         <AnimatePresence mode="wait">
 
@@ -243,8 +255,18 @@ Output ONLY valid JSON, no markdown.`;
           {step === 'player' && (
             <motion.div key="player" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6, ease }}
               className="player-inner"
+              role="button"
+              tabIndex={0}
+              aria-label="Create your space"
+              onClick={openPrompt}
               onMouseEnter={() => setHovered(true)}
               onMouseLeave={() => setHovered(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openPrompt();
+                }
+              }}
             >
               {/* Placeholder image */}
               <motion.div
@@ -256,7 +278,7 @@ Output ONLY valid JSON, no markdown.`;
 
               {/* Title watermark */}
               <div className="player-watermark">
-                <span style={{ fontFamily: "'Noto Sans SC', sans-serif" }}>Aether Mixer</span>
+                <span>Aether Mixer</span>
               </div>
 
               {/* Hover CTA */}
@@ -291,10 +313,11 @@ Output ONLY valid JSON, no markdown.`;
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="A rainy night café, warm light and water streaks on the window…"
                 className="prompt-textarea"
-                style={{ fontFamily: "'Noto Sans SC', sans-serif" }}
                 autoFocus
+                maxLength={220}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateScene(); } }}
               />
+              <div className="prompt-count" aria-hidden="true">{prompt.length}/220</div>
               <button onClick={() => generateScene()} className="prompt-generate-btn">
                 <Sparkles size={13} />
                 Generate Space
