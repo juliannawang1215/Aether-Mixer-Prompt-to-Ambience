@@ -1371,7 +1371,7 @@ body,
 .prompt-gallery {
   position: absolute;
   inset: 0;
-  perspective: 900px;
+  perspective: 1400px;
   transform-style: preserve-3d;
 }
 
@@ -1380,10 +1380,25 @@ body,
   width: min(260px, 19vw);
   height: min(160px, 11vw);
   border-radius: 0;
-  background-size: cover;
-  background-position: center;
+  background: transparent;
   border: 0;
   box-shadow: none;
+  overflow: hidden;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.prompt-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--tile-bg);
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: var(--tile-pos-x, 50%) var(--tile-pos-y, 50%);
+  transform: scale(var(--tile-zoom, 1.06));
+  transform-origin: center;
   will-change: transform;
 }
 

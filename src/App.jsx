@@ -41,6 +41,16 @@ const SURPRISE_CARDS = [
   { text: 'A lone house in a snowfield at twilight', img: '/stills/still-house-snowfield-1.png' },
   { text: 'Rainy street, reflections, late night transit', img: '/stills/still-rain-street-1.png' },
   { text: 'Convenience store glow in the rain, empty road', img: '/stills/still-convenience-rain-1.png' },
+  { text: 'Books wall, afternoon light, quiet reading', img: '/stills/still-books-wall-1.png' },
+  { text: 'Snowy street café, warm window glow', img: '/stills/still-cafe-snow-street-1.png' },
+  { text: 'Turntable at dusk, city beyond the glass', img: '/stills/still-turntable-dusk-1.png' },
+  { text: 'Desk by a rainy window, green outside', img: '/stills/still-rain-desk-1.png' },
+  { text: 'Soft sunrise, someone playing piano', img: '/stills/still-piano-sunrise-1.png' },
+  { text: 'Rainy corner café at night, reflections', img: '/stills/still-rainy-corner-cafe-1.png' },
+  { text: 'Minimal fireplace room, winter stillness', img: '/stills/still-snow-fireplace-1.png' },
+  { text: 'Sofa by a snow window, calm lamplight', img: '/stills/still-snow-sofa-window-1.png' },
+  { text: 'Mountains and field, overcast and wide', img: '/stills/still-mountains-field-1.png' },
+  { text: 'Snow suburb outside a window, night hush', img: '/stills/still-snow-suburb-window-1.png' },
 ];
 
 function sanitizeScenePayload(raw) {
@@ -77,7 +87,7 @@ export default function App() {
 
   const { init, applyMix, setTrackGain, startTracks, TRACK_KEYS } = useAetherAudio();
 
-  // Prompt background: vector-field style drift with wheel "thrust"
+  // Prompt background: 3D conveyor (tiles travel along Z towards the camera)
   const driftRef = useRef({
     raf: 0,
     lastT: 0,
@@ -85,6 +95,9 @@ export default function App() {
     thrustTarget: 0,
     t: 0,
     tiles: [],
+    poolLen: 0,
+    deck: [],
+    deckPtr: 0,
   });
   const [, bump] = useState(0);
   useEffect(() => {
@@ -103,10 +116,19 @@ export default function App() {
 
     const initTilesIfNeeded = () => {
       const d = driftRef.current;
-      const TILE_COUNT = 42;
+      const TILE_COUNT = Math.max(24, Math.min(48, SURPRISE_CARDS.length * 2));
       if (d.tiles.length === TILE_COUNT && d.poolLen === SURPRISE_CARDS.length) return;
-      const m = 0.18; // overscan margin in viewport fractions
+      const m = 0.14; // overscan margin in viewport fractions
       d.poolLen = SURPRISE_CARDS.length;
+      d.deck = Array.from({ length: Math.max(1, SURPRISE_CARDS.length) }, (_, idx) => idx);
+      // Fisher–Yates shuffle (deterministic-ish based on current pool length)
+      for (let i = d.deck.length - 1; i > 0; i--) {
+        const j = Math.floor(rand01(i + 9999 + d.poolLen) * (i + 1));
+        const tmp = d.deck[i];
+        d.deck[i] = d.deck[j];
+        d.deck[j] = tmp;
+      }
+      d.deckPtr = 0;
       const avoid = { cx: 0.5, cy: 0.52, rx: 0.22, ry: 0.16 }; // keep center clearer for input
       const pickPos = (seedBase) => {
         for (let a = 0; a < 14; a++) {
@@ -128,22 +150,28 @@ export default function App() {
         const r3 = rand01(i + 101);
         const r4 = rand01(i + 1001);
         const r5 = rand01(i + 5001);
+        const r6 = rand01(i + 7001);
+        const r7 = rand01(i + 9001);
 
-        // bias directions away from purely vertical so it feels "field-like"
-        const angle = (r1 * Math.PI * 2) + (r2 - 0.5) * 0.55;
-        const depth = 0.18 + r3 * 0.82; // 0.18..1
-        const baseSpeed = (0.035 + r4 * 0.08) * (0.55 + depth * 0.85); // viewport / sec
+        // depth drives size and speed; z controls the 3D conveyor placement
+        const depth = 0.22 + r3 * 0.78; // 0.22..1
+        const baseSpeed = (0.28 + r4 * 0.58) * (0.55 + depth * 0.9); // z units / sec (scaled below)
         const { x, y } = pickPos(i * 31 + 7);
+        const zFar = -2200;
+        const zNear = 260;
+        const z = zFar + (zNear - zFar) * r2;
         return {
           x,
           y,
-          dx: Math.cos(angle),
-          dy: Math.sin(angle),
-          angle,
           depth,
           baseSpeed,
           phase: r1 * Math.PI * 2,
-          imgIndex: Math.floor(r5 * Math.max(1, SURPRISE_CARDS.length)),
+          imgIndex: d.deck[(d.deckPtr++) % d.deck.length] ?? Math.floor(r5 * Math.max(1, SURPRISE_CARDS.length)),
+          z,
+          // Slight crop/zoom variance to avoid “same still” feeling (no filters).
+          posX: Math.round((r6 * 60 + 20) * 10) / 10, // 20..80
+          posY: Math.round((r7 * 60 + 20) * 10) / 10, // 20..80
+          zoom: 1.02 + (rand01(i + 11001) * 0.12), // 1.02..1.14
         };
       });
     };
@@ -160,17 +188,28 @@ export default function App() {
       d.thrustTarget *= 0.92;
       d.thrustTarget = clamp(d.thrustTarget, -2.2, 2.2);
 
-      const m = 0.18;
+      const zFar = -2200;
+      const zNear = 260;
       for (const tile of d.tiles) {
-        const wobble = Math.sin(d.t * (0.7 + tile.depth * 0.9) + tile.phase) * 0.006;
-        const forward = tile.baseSpeed + d.thrust * (0.11 + tile.depth * 0.12);
-        // light vector-field curl so the collage feels alive
-        const curl =
-          Math.sin((tile.x + d.t * 0.08) * 5.3) * Math.cos((tile.y - d.t * 0.06) * 4.7) * 0.018;
-        const nx = tile.dx + curl * -tile.dy;
-        const ny = tile.dy + curl * tile.dx;
-        tile.x = wrap(tile.x + (nx * (forward + wobble)) * dt, -m, 1 + m);
-        tile.y = wrap(tile.y + (ny * (forward + wobble)) * dt, -m, 1 + m);
+        // subtle breathing so it's not perfectly mechanical
+        const wobble = Math.sin(d.t * (0.55 + tile.depth * 0.85) + tile.phase) * 18;
+        const forward = tile.baseSpeed + d.thrust * (0.9 + tile.depth * 0.6);
+        tile.z += (forward * 520) * dt; // px/sec
+        tile.z += wobble * dt;
+        if (tile.z > zNear) {
+          tile.z = zFar + (tile.z - zNear);
+          // Deal a new still on wrap (prevents same-image clusters).
+          if (d.deck.length) {
+            tile.imgIndex = d.deck[(d.deckPtr++) % d.deck.length];
+          } else {
+            tile.imgIndex = (tile.imgIndex + 1) % Math.max(1, SURPRISE_CARDS.length);
+          }
+          // Refresh crop a bit so repeats are less obvious.
+          const seed = Math.floor((d.t + tile.phase) * 1000) + (tile.imgIndex ?? 0) * 17;
+          tile.posX = Math.round((rand01(seed + 1) * 60 + 20) * 10) / 10;
+          tile.posY = Math.round((rand01(seed + 2) * 60 + 20) * 10) / 10;
+          tile.zoom = 1.02 + (rand01(seed + 3) * 0.12);
+        }
       }
 
       bump((n) => (n + 1) % 1_000_000);
@@ -185,8 +224,8 @@ export default function App() {
     const onWheel = (e) => {
       // Prevent the browser from treating this as page scroll (page is intentionally non-scrollable).
       e.preventDefault();
-      // Trackpads can send tiny deltas; keep it responsive but subtle.
-      driftRef.current.thrustTarget += e.deltaY * 0.0022;
+      // Trackpads can send tiny deltas; map to forward/back thrust.
+      driftRef.current.thrustTarget += e.deltaY * 0.0032;
     };
     window.addEventListener('wheel', onWheel, { passive: false });
     return () => window.removeEventListener('wheel', onWheel);
@@ -397,17 +436,20 @@ Output ONLY valid JSON, no markdown.`;
                     const xN = tile?.x ?? ((i % 7) * 0.12 + 0.10);
                     const yN = tile?.y ?? (Math.floor(i / 7) * 0.12 + 0.10);
                     const depth = tile?.depth ?? 0.65;
-                    const z = (depth - 0.5) * 160;
-                    const scale = 0.78 + depth * 0.46;
+                    const z = tile?.z ?? (-1200 + (i % 12) * 140);
+                    const zNorm = Math.max(0, Math.min(1, (z + 2200) / (2200 + 260)));
+                    const scale = (0.62 + depth * 0.62) * (0.72 + zNorm * 0.68);
                     const rollDeg =
-                      (((tile?.angle ?? (i * 0.7)) * 180) / Math.PI) * 0.14 +
-                      Math.sin((d.t ?? 0) * (0.35 + depth) + (tile?.phase ?? 0)) * 2.2;
+                      Math.sin((d.t ?? 0) * (0.35 + depth) + (tile?.phase ?? 0)) * 1.2;
                     return (
                       <div
                         key={`${i}-${String(img).slice(0, 24)}`}
                         className="prompt-tile"
                         style={{
-                          backgroundImage: `url(${img})`,
+                          '--tile-bg': `url(${img})`,
+                          '--tile-pos-x': `${tile?.posX ?? 50}%`,
+                          '--tile-pos-y': `${tile?.posY ?? 50}%`,
+                          '--tile-zoom': `${tile?.zoom ?? 1.06}`,
                           transform: `translate3d(${xN * 100}vw, ${yN * 100}vh, 0) translateZ(${z}px) scale(${scale}) rotate(${rollDeg}deg)`,
                         }}
                       />
