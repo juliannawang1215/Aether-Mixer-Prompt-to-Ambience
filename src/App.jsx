@@ -4,7 +4,7 @@
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, RotateCcw, Volume2, X, SlidersHorizontal } from 'lucide-react';
+import { Sparkles, RotateCcw, Volume2, X, SlidersHorizontal, ArrowRight } from 'lucide-react';
 import { useAetherAudio } from './useAetherAudio';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -17,17 +17,30 @@ const TRACK_LABELS = {
   thunder: 'Thunder', cafe: 'Café', train: 'Train', white_noise: 'White Noise',
 };
 
-const SURPRISE_ME = [
-  'Snow falling outside a window',
-  'Cozy room with a warm lamp',
-  'Small cabin in the snow',
-  'Rainy forest outside a window',
-  'Misty mountain landscape',
-  'Coffee shop window in winter',
-  'Piano in a quiet room',
-  'Reading chair by a bookshelf',
-  'Winter street at night',
-  'House in the distance at dusk',
+const SURPRISE_CARDS = [
+  // Local stills
+  { text: 'A quiet interior, warm lamp glow, soft shadows', img: '/card_cozy_room.png' },
+  { text: 'Snow falling outside a window, thick glass and hush', img: '/card_snow_window.png' },
+  { text: 'A small cabin in snow, distant wind and pine', img: '/card_cabin_snow.png' },
+  { text: 'Rainy forest, wet leaves, muted daylight', img: '/card_rainy_forest.png' },
+  { text: 'Misty mountains, cold air, low clouds', img: '/card_misty_mountain.png' },
+  { text: 'Winter café window, amber lights, drizzle', img: '/card_coffee_shop.png' },
+  { text: 'Slow camera drift across a still frame', img: '/scene1.png' },
+  { text: 'A second still, slightly different mood', img: '/scene2.png' },
+
+  // Added real stills (copied into public/stills)
+  { text: 'Foggy train platform, distant hum, wet air', img: '/stills/still-train-fog-1.png' },
+  { text: 'Snow on window, warm interior, quiet street', img: '/stills/still-snow-window-2.png' },
+  { text: 'Rainy café table by the window, soft amber light', img: '/stills/still-rain-cafe-1.png' },
+  { text: 'Cabin at blue hour, lights on, snowfield', img: '/stills/still-cabin-snow-2.png' },
+  { text: 'Rain on glass, forest outside, muted tones', img: '/stills/still-rain-window-3.png' },
+  { text: 'Empty station, mist and sodium lights', img: '/stills/still-train-station-2.png' },
+  { text: 'Still lake at dawn, low fog, distant ridge', img: '/stills/still-lake-dawn-1.png' },
+  { text: 'Piano by a window at dusk, city lights far away', img: '/stills/still-piano-window-1.png' },
+  { text: 'Reading chair and lamp, bookshelf hush', img: '/stills/still-chair-library-1.png' },
+  { text: 'A lone house in a snowfield at twilight', img: '/stills/still-house-snowfield-1.png' },
+  { text: 'Rainy street, reflections, late night transit', img: '/stills/still-rain-street-1.png' },
+  { text: 'Convenience store glow in the rain, empty road', img: '/stills/still-convenience-rain-1.png' },
 ];
 
 function sanitizeScenePayload(raw) {
@@ -53,36 +66,144 @@ function sanitizeScenePayload(raw) {
 
 export default function App() {
   // Steps: player → prompt → loading → scene
-  const [step, setStep] = useState('player');
+  const [step, setStep] = useState('prompt');
   const [prompt, setPrompt] = useState('');
   const [loadingMsg, setLoadingMsg] = useState('');
   const [error, setError] = useState(null);
   const [scene, setScene] = useState(null);
   const [dismissedTracks, setDismissedTracks] = useState(new Set());
   const [mixerOpen, setMixerOpen] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const audioInitRef = useRef(false);
 
   const { init, applyMix, setTrackGain, startTracks, TRACK_KEYS } = useAetherAudio();
 
-  // On touch devices where hover doesn't exist, show the CTA by default.
+  // Prompt background: vector-field style drift with wheel "thrust"
+  const driftRef = useRef({
+    raf: 0,
+    lastT: 0,
+    thrust: 0,
+    thrustTarget: 0,
+    t: 0,
+    tiles: [],
+  });
+  const [, bump] = useState(0);
   useEffect(() => {
-    const mql = window.matchMedia?.('(hover: none)');
-    if (mql?.matches) setHovered(true);
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const wrap = (v, min, max) => {
+      const span = max - min;
+      const n = ((v - min) % span + span) % span;
+      return min + n;
+    };
+
+    const rand01 = (seed) => {
+      // deterministic PRNG from seed → 0..1
+      const x = Math.sin(seed * 999.123) * 10000;
+      return x - Math.floor(x);
+    };
+
+    const initTilesIfNeeded = () => {
+      const d = driftRef.current;
+      const TILE_COUNT = 42;
+      if (d.tiles.length === TILE_COUNT && d.poolLen === SURPRISE_CARDS.length) return;
+      const m = 0.18; // overscan margin in viewport fractions
+      d.poolLen = SURPRISE_CARDS.length;
+      const avoid = { cx: 0.5, cy: 0.52, rx: 0.22, ry: 0.16 }; // keep center clearer for input
+      const pickPos = (seedBase) => {
+        for (let a = 0; a < 14; a++) {
+          const rA = rand01(seedBase + a * 17 + 3);
+          const rB = rand01(seedBase + a * 17 + 9);
+          const x = wrap(rA * (1 + 2 * m) - m, -m, 1 + m);
+          const y = wrap(rB * (1 + 2 * m) - m, -m, 1 + m);
+          const inVoid =
+            Math.abs(x - avoid.cx) < avoid.rx &&
+            Math.abs(y - avoid.cy) < avoid.ry;
+          if (!inVoid) return { x, y };
+        }
+        return { x: wrap(rand01(seedBase + 77) * (1 + 2 * m) - m, -m, 1 + m), y: wrap(rand01(seedBase + 99) * (1 + 2 * m) - m, -m, 1 + m) };
+      };
+
+      d.tiles = Array.from({ length: TILE_COUNT }).map((_, i) => {
+        const r1 = rand01(i + 1);
+        const r2 = rand01(i + 11);
+        const r3 = rand01(i + 101);
+        const r4 = rand01(i + 1001);
+        const r5 = rand01(i + 5001);
+
+        // bias directions away from purely vertical so it feels "field-like"
+        const angle = (r1 * Math.PI * 2) + (r2 - 0.5) * 0.55;
+        const depth = 0.18 + r3 * 0.82; // 0.18..1
+        const baseSpeed = (0.035 + r4 * 0.08) * (0.55 + depth * 0.85); // viewport / sec
+        const { x, y } = pickPos(i * 31 + 7);
+        return {
+          x,
+          y,
+          dx: Math.cos(angle),
+          dy: Math.sin(angle),
+          angle,
+          depth,
+          baseSpeed,
+          phase: r1 * Math.PI * 2,
+          imgIndex: Math.floor(r5 * Math.max(1, SURPRISE_CARDS.length)),
+        };
+      });
+    };
+
+    const tick = (now) => {
+      initTilesIfNeeded();
+      const d = driftRef.current;
+      const dt = d.lastT ? clamp((now - d.lastT) / 1000, 0, 0.05) : 1 / 60;
+      d.lastT = now;
+      d.t += dt;
+
+      // Smooth thrust input and decay to neutral.
+      d.thrust += (d.thrustTarget - d.thrust) * 0.12;
+      d.thrustTarget *= 0.92;
+      d.thrustTarget = clamp(d.thrustTarget, -2.2, 2.2);
+
+      const m = 0.18;
+      for (const tile of d.tiles) {
+        const wobble = Math.sin(d.t * (0.7 + tile.depth * 0.9) + tile.phase) * 0.006;
+        const forward = tile.baseSpeed + d.thrust * (0.11 + tile.depth * 0.12);
+        // light vector-field curl so the collage feels alive
+        const curl =
+          Math.sin((tile.x + d.t * 0.08) * 5.3) * Math.cos((tile.y - d.t * 0.06) * 4.7) * 0.018;
+        const nx = tile.dx + curl * -tile.dy;
+        const ny = tile.dy + curl * tile.dx;
+        tile.x = wrap(tile.x + (nx * (forward + wobble)) * dt, -m, 1 + m);
+        tile.y = wrap(tile.y + (ny * (forward + wobble)) * dt, -m, 1 + m);
+      }
+
+      bump((n) => (n + 1) % 1_000_000);
+      d.raf = requestAnimationFrame(tick);
+    };
+
+    driftRef.current.raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(driftRef.current.raf);
+  }, []);
+
+  useEffect(() => {
+    const onWheel = (e) => {
+      // Prevent the browser from treating this as page scroll (page is intentionally non-scrollable).
+      e.preventDefault();
+      // Trackpads can send tiny deltas; keep it responsive but subtle.
+      driftRef.current.thrustTarget += e.deltaY * 0.0022;
+    };
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
   }, []);
 
   const ensureAudio = useCallback(() => {
     if (!audioInitRef.current) {
-      const ctx = init();
-      if (ctx.state === 'suspended') ctx.resume();
-      audioInitRef.current = true;
+      try {
+        const ctx = init();
+        if (ctx.state === 'suspended') ctx.resume();
+        audioInitRef.current = true;
+      } catch (_) {
+        // Audio init can be blocked until a user gesture in some environments.
+        // UI navigation should not depend on this.
+      }
     }
   }, [init]);
-
-  const openPrompt = useCallback(() => {
-    ensureAudio();
-    setStep('prompt');
-  }, [ensureAudio]);
 
   const generateScene = useCallback(async (text) => {
     const t = (text || prompt).trim();
@@ -137,7 +258,7 @@ Output ONLY valid JSON, no markdown.`;
   }, [prompt, applyMix, startTracks, ensureAudio]);
 
   const backToPlayer = useCallback(() => {
-    setStep('player');
+    setStep('prompt');
     setScene(null);
     setPrompt('');
     setMixerOpen(false);
@@ -159,210 +280,191 @@ Output ONLY valid JSON, no markdown.`;
   // ——————————— Scene View (full-page) ———————————
   if (step === 'scene' && scene) {
     return (
-      <>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1.2, ease }} className="scene-page">
-          <div className="scene-frame">
-            <motion.div
-              className="scene-bg"
-              style={{ backgroundImage: `url(${scene.imageDataUrl})` }}
-              initial={{ filter: 'blur(12px)', opacity: 0.6 }}
-              animate={{ filter: 'blur(0px)', opacity: 1 }}
-              transition={{ duration: 1.5, ease }}
-            />
-            <div className="scene-dim" />
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.9, ease }} className="scene-stage">
+        <div className="scene-matte" aria-hidden="true" />
+        <div className="scene-still" style={{ backgroundImage: `url(${scene.imageDataUrl})` }} />
+        <div className="scene-vignette" aria-hidden="true" />
 
-            {/* Top bar */}
-            <div className="scene-top-bar">
-              <div className="scene-title-block">
-                <h1 className="scene-title">{scene.title}</h1>
-                {Array.isArray(scene.tags) && scene.tags.length > 0 && (
-                  <div className="scene-tags" aria-label="Atmosphere tags">
-                    {scene.tags.slice(0, 6).map((t) => (
-                      <span key={t} className="scene-tag">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
+        <div className="scene-hud">
+          <div className="scene-hud-left">
+            <div className="scene-chip">AETHER MIXER</div>
+            <h1 className="scene-h1">{scene.title}</h1>
+            {Array.isArray(scene.tags) && scene.tags.length > 0 && (
+              <div className="scene-tags" aria-label="Atmosphere tags">
+                {scene.tags.slice(0, 6).map((t) => (
+                  <span key={t} className="scene-tag">
+                    {t}
+                  </span>
+                ))}
               </div>
-              <button onClick={backToPlayer} className="scene-rebuild-btn">
-                <RotateCcw size={11} />
-                Rebuild
-              </button>
-            </div>
-
-            {/* Waveform */}
-            <div className="scene-waveform">
-              {Array.from({ length: 24 }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="scene-wave-bar"
-                  animate={{ scaleY: [0.3, 0.9, 0.3] }}
-                  transition={{ duration: 1.2 + (i % 5) * 0.15, repeat: Infinity, ease: 'easeInOut', delay: i * 0.04 }}
-                />
-              ))}
-            </div>
-
-            {/* Mixer */}
-            <div className="scene-mixer-area">
-              <AnimatePresence>
-                {mixerOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 12, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 12, scale: 0.95 }}
-                    transition={{ duration: 0.25, ease }}
-                    className="mixer-panel"
-                  >
-                    <p className="mixer-label"><Volume2 size={10} /> Mixer</p>
-                    {activeTracks.length === 0 ? (
-                      <p className="mixer-empty">No active tracks</p>
-                    ) : (
-                      <div className="mixer-tracks">
-                        {activeTracks.map((k) => (
-                          <div key={k} className="mixer-track">
-                            <span className="mixer-track-name">{TRACK_LABELS[k]}</span>
-                            <input type="range" min="0" max="1" step="0.05" value={scene.mix[k] ?? 0}
-                              onChange={(e) => { const v = parseFloat(e.target.value); setTrackGain(k, v); setScene((prev) => prev ? { ...prev, mix: { ...prev.mix, [k]: v } } : prev); }}
-                              className="mixer-slider"
-                            />
-                            <span className="mixer-track-pct">{Math.round((scene.mix[k] ?? 0) * 100)}%</span>
-                            <button onClick={() => dismissTrack(k)} className="mixer-track-dismiss" title="Remove"><X size={10} /></button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <motion.button onClick={() => setMixerOpen((v) => !v)} className="glass-icon" whileTap={{ scale: 0.9 }}>
-                <SlidersHorizontal size={20} />
-              </motion.button>
-            </div>
+            )}
           </div>
-        </motion.div>
-      </>
+          <div className="scene-hud-right">
+            <button onClick={backToPlayer} className="scene-ghost-btn">
+              <RotateCcw size={12} />
+              Rebuild
+            </button>
+          </div>
+        </div>
+
+        <div className="scene-footer">
+          <div className="scene-waveform" aria-hidden="true">
+            {Array.from({ length: 28 }).map((_, i) => (
+              <motion.div
+                key={i}
+                className="scene-wave-bar"
+                animate={{ scaleY: [0.25, 1, 0.25] }}
+                transition={{ duration: 1.1 + (i % 7) * 0.12, repeat: Infinity, ease: 'easeInOut', delay: i * 0.03 }}
+              />
+            ))}
+          </div>
+
+          <div className="dock">
+            <AnimatePresence>
+              {mixerOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 14, scale: 0.98 }}
+                  transition={{ duration: 0.22, ease }}
+                  className="dock-panel"
+                >
+                  <div className="dock-title">
+                    <Volume2 size={12} />
+                    Mixer
+                  </div>
+                  {activeTracks.length === 0 ? (
+                    <div className="dock-empty">No active tracks</div>
+                  ) : (
+                    <div className="dock-tracks">
+                      {activeTracks.map((k) => (
+                        <div key={k} className="dock-row">
+                          <div className="dock-name">{TRACK_LABELS[k]}</div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={scene.mix[k] ?? 0}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              setTrackGain(k, v);
+                              setScene((prev) => (prev ? { ...prev, mix: { ...prev.mix, [k]: v } } : prev));
+                            }}
+                            className="dock-slider"
+                          />
+                          <div className="dock-pct">{Math.round((scene.mix[k] ?? 0) * 100)}%</div>
+                          <button onClick={() => dismissTrack(k)} className="dock-x" title="Remove">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <motion.button onClick={() => setMixerOpen((v) => !v)} className="dock-btn" whileTap={{ scale: 0.96 }} aria-label="Toggle mixer">
+              <SlidersHorizontal size={18} />
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
     );
   }
 
   // ——————————— Player / Prompt / Loading Widget ———————————
   return (
-    <div className="page-bg">
-      <div className="player-widget">
-        <AnimatePresence mode="wait">
-
-          {/* ——— Player (default) ——— */}
-          {step === 'player' && (
-            <motion.div key="player" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6, ease }}
-              className="player-inner"
-              role="button"
-              tabIndex={0}
-              aria-label="Create your space"
-              onClick={openPrompt}
-              onMouseEnter={() => setHovered(true)}
-              onMouseLeave={() => setHovered(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openPrompt();
-                }
-              }}
-            >
-              {/* Placeholder image */}
+    <div className="immersive-shell">
+      <div className="immersive-frame">
+          <AnimatePresence mode="wait">
+            {/* ——— Prompt Input ——— */}
+            {step === 'prompt' && (
               <motion.div
-                className="player-image"
-                style={{ backgroundImage: `url(${PLACEHOLDER_IMAGES[0]})` }}
-                animate={{ filter: hovered ? 'blur(20px) brightness(0.6)' : 'blur(0px) brightness(1)' }}
-                transition={{ duration: 0.5, ease }}
-              />
-
-              {/* Title watermark */}
-              <div className="player-watermark">
-                <span>Aether Mixer</span>
-              </div>
-
-              {/* Hover CTA */}
-              <AnimatePresence>
-                {hovered && (
-                  <motion.div
-                    className="player-cta-wrap"
-                    initial={{ opacity: 0, scale: 0.92 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.92 }}
-                    transition={{ duration: 0.3, ease }}
-                  >
-                    <button className="liquid-glass-btn" onClick={openPrompt}>
-                      <Sparkles size={14} />
-                      Create Your Space
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-
-          {/* ——— Prompt Input ——— */}
-          {step === 'prompt' && (
-            <motion.div key="prompt" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.6, ease }}
-              className="prompt-view"
-            >
-              <p className="prompt-heading">Describe your atmosphere</p>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="A rainy night café, warm light and water streaks on the window…"
-                className="prompt-textarea"
-                autoFocus
-                maxLength={220}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateScene(); } }}
-              />
-              <div className="prompt-count" aria-hidden="true">{prompt.length}/220</div>
-              <button onClick={() => generateScene()} className="prompt-generate-btn">
-                <Sparkles size={13} />
-                Generate Space
-              </button>
-
-              {/* Surprise Me */}
-              <div className="surprise-section">
-                <p className="surprise-label">Or try one of these</p>
-                <div className="surprise-chips">
-                  {SURPRISE_ME.slice(0, 6).map((s, i) => (
-                    <button key={i} className="surprise-chip" onClick={() => { setPrompt(s); generateScene(s); }}>
-                      {s}
-                    </button>
-                  ))}
+                key="prompt"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.7, ease }}
+                className="prompt-stage"
+              >
+                <div className="prompt-gallery" aria-hidden="true">
+                  {driftRef.current.tiles.map((tile, i) => {
+                    const d = driftRef.current;
+                    const pool = SURPRISE_CARDS;
+                    const img = pool[(tile?.imgIndex ?? i) % Math.max(1, pool.length)]?.img ?? '/scene1.png';
+                    const xN = tile?.x ?? ((i % 7) * 0.12 + 0.10);
+                    const yN = tile?.y ?? (Math.floor(i / 7) * 0.12 + 0.10);
+                    const depth = tile?.depth ?? 0.65;
+                    const z = (depth - 0.5) * 160;
+                    const scale = 0.78 + depth * 0.46;
+                    const rollDeg =
+                      (((tile?.angle ?? (i * 0.7)) * 180) / Math.PI) * 0.14 +
+                      Math.sin((d.t ?? 0) * (0.35 + depth) + (tile?.phase ?? 0)) * 2.2;
+                    return (
+                      <div
+                        key={`${i}-${String(img).slice(0, 24)}`}
+                        className="prompt-tile"
+                        style={{
+                          backgroundImage: `url(${img})`,
+                          transform: `translate3d(${xN * 100}vw, ${yN * 100}vh, 0) translateZ(${z}px) scale(${scale}) rotate(${rollDeg}deg)`,
+                        }}
+                      />
+                    );
+                  })}
                 </div>
-              </div>
 
-              <button onClick={() => setStep('player')} className="prompt-back-btn">← Back</button>
-            </motion.div>
-          )}
+                <div className="prompt-center">
+                  <div className="prompt-editor">
+                    <form
+                      className="prompt-pill"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        generateScene();
+                      }}
+                    >
+                      <input
+                        value={prompt ?? ''}
+                        onChange={(e) => {
+                          const v = e?.target?.value;
+                          setPrompt(typeof v === 'string' ? v : '');
+                        }}
+                        onFocus={ensureAudio}
+                        placeholder="Describe your atmosphere…"
+                        className="prompt-pill-input"
+                        maxLength={220}
+                      />
+                      <button type="submit" className="prompt-pill-submit" aria-label="Generate">
+                        <ArrowRight size={18} />
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
-          {/* ——— Loading ——— */}
-          {step === 'loading' && (
-            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="loading-view"
-            >
-              <motion.div
-                className="loading-spinner"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-              />
-              <p className="loading-msg">{loadingMsg}</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            {/* ——— Loading ——— */}
+            {step === 'loading' && (
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="loading">
+                <div className="loading-matte" />
+                <motion.div className="loading-ring" animate={{ rotate: 360 }} transition={{ duration: 2.4, repeat: Infinity, ease: 'linear' }} />
+                <div className="loading-text">
+                  <div className="loading-kicker">Processing</div>
+                  <div className="loading-msg">{loadingMsg}</div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {error && (
+              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} className="toast">
+                {error}
+              </motion.div>
+            )}
+          </AnimatePresence>
       </div>
-
-      {/* Error toast */}
-      <AnimatePresence>
-        {error && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="error-toast">
-            {error}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
