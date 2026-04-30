@@ -6,6 +6,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, RotateCcw, Volume2, X, SlidersHorizontal, ArrowRight } from 'lucide-react';
 import { useAetherAudio } from './useAetherAudio';
+import { generateImageWithValidation } from './generateImageWithValidation';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 const MODEL = 'gemini-2.5-flash';
@@ -74,10 +75,95 @@ function sanitizeScenePayload(raw) {
   };
 }
 
+function fallbackSceneFromPrompt(userPrompt) {
+  const t = String(userPrompt || '').trim();
+  const s = t.toLowerCase();
+
+  const hasAny = (...keys) => keys.some((k) => s.includes(k));
+  const clamp01 = (n) => Math.min(1, Math.max(0, n));
+
+  const mix = {
+    rain: 0,
+    fire: 0,
+    wind: 0,
+    waves: 0,
+    birds: 0,
+    thunder: 0,
+    cafe: 0,
+    train: 0,
+    white_noise: 0.12,
+  };
+
+  if (hasAny('rain', 'rainy', 'drizzle', 'storm', 'shower', 'wet')) mix.rain = 0.72;
+  if (hasAny('thunder', 'lightning')) mix.thunder = 0.55;
+  if (hasAny('wind', 'breeze', 'gust')) mix.wind = 0.38;
+  if (hasAny('waves', 'ocean', 'sea', 'coast', 'beach')) mix.waves = 0.62;
+  if (hasAny('birds', 'forest', 'woods', 'trees')) mix.birds = 0.22;
+  if (hasAny('fire', 'fireplace', 'hearth', 'candle')) mix.fire = 0.48;
+  if (hasAny('cafe', 'coffee', 'espresso', 'barista')) mix.cafe = 0.42;
+  if (hasAny('train', 'station', 'subway', 'rail')) mix.train = 0.50;
+  if (hasAny('snow', 'winter', 'blizzard', 'frost')) mix.wind = Math.max(mix.wind, 0.24);
+
+  // If it's quiet / minimal, bias toward white noise + gentle wind.
+  if (hasAny('quiet', 'silent', 'hush', 'minimal', 'calm')) {
+    mix.white_noise = Math.max(mix.white_noise, 0.22);
+    mix.wind = Math.max(mix.wind, 0.16);
+  }
+
+  // If no strong cues, keep it softly neutral.
+  const sum = Object.values(mix).reduce((a, b) => a + b, 0);
+  if (sum < 0.18) {
+    mix.white_noise = 0.18;
+    mix.wind = 0.10;
+  }
+
+  // Keep within 0..1
+  for (const k of Object.keys(mix)) mix[k] = clamp01(mix[k]);
+
+  const tags = [];
+  if (mix.rain > 0.3) tags.push('rain');
+  if (mix.thunder > 0.25) tags.push('thunder');
+  if (mix.wind > 0.2) tags.push('wind');
+  if (mix.waves > 0.25) tags.push('waves');
+  if (mix.fire > 0.25) tags.push('fire');
+  if (mix.cafe > 0.25) tags.push('cafe');
+  if (mix.train > 0.25) tags.push('train');
+  if (mix.birds > 0.18) tags.push('forest');
+  if (tags.length < 2) tags.push('hush');
+  if (tags.length < 3) tags.push('drift');
+
+  const title =
+    (t.split(/[.!?，。！？]/)[0] || 'Aether')
+      .replace(/[^a-zA-Z0-9\s]/g, '')
+      .trim()
+      .slice(0, 30) || 'Aether';
+
+  return {
+    imagePrompt: t.slice(0, 2000),
+    mix,
+    title,
+    tags: tags.slice(0, 6),
+  };
+}
+
+function ensureAudibleMix(mix) {
+  const out = { ...mix };
+  const keys = Object.keys(out);
+  const sum = keys.reduce((a, k) => a + (Number(out[k]) || 0), 0);
+  if (sum <= 0.001) {
+    out.white_noise = 0.22;
+    out.wind = 0.14;
+  } else {
+    out.white_noise = Math.max(Number(out.white_noise) || 0, 0.10);
+  }
+  return out;
+}
+
 export default function App() {
   // Steps: player → prompt → loading → scene
   const [step, setStep] = useState('prompt');
   const [prompt, setPrompt] = useState('');
+  // Expand the prompt only once the user starts typing.
   const [loadingMsg, setLoadingMsg] = useState('');
   const [error, setError] = useState(null);
   const [scene, setScene] = useState(null);
@@ -251,6 +337,11 @@ export default function App() {
       setTimeout(() => setError(null), 3000);
       return;
     }
+    if (!API_KEY) {
+      setError('Missing Gemini API key (VITE_GEMINI_API_KEY).');
+      setStep('prompt');
+      return;
+    }
     ensureAudio();
     setStep('loading');
     setError(null);
@@ -264,35 +355,93 @@ export default function App() {
 - tags: array of 2–6 short English atmosphere tags.
 Output ONLY valid JSON, no markdown.`;
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
-        {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+      const payload = {
+        contents: [{ parts: [{ text: `${sys}\n\nUser: ${t}` }] }],
+        generationConfig: { responseMimeType: 'application/json' },
+      };
+
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      let data;
+      let lastStatus = 0;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) setLoadingMsg(`Retrying… (${attempt + 1}/3)`);
+        const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `${sys}\n\nUser: ${t}` }] }],
-            generationConfig: { responseMimeType: 'application/json' },
-          }),
+          body: JSON.stringify(payload),
+        });
+        lastStatus = res.status;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
         }
-      );
-      const data = await res.json();
-      if (!res.ok || data?.error) throw new Error(data?.error?.message || `API ${res.status}`);
+
+        if (res.ok && !data?.error) break;
+
+        const retryable = res.status === 429 || res.status === 500 || res.status === 503;
+        if (!retryable || attempt === 2) {
+          const msg = data?.error?.message || (lastStatus ? `API ${lastStatus}` : 'Request failed');
+          throw new Error(
+            lastStatus === 503
+              ? `Gemini temporarily unavailable (503). Please try again in a moment.`
+              : msg
+          );
+        }
+
+        await sleep(400 * Math.pow(2, attempt));
+      }
+
       const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!raw || typeof raw !== 'string') throw new Error('No content returned.');
 
       setLoadingMsg('Building your space…');
       const clean = sanitizeScenePayload(raw);
-      const imageDataUrl = PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
+      clean.mix = ensureAudibleMix(clean.mix);
+      setLoadingMsg('Rendering the scene…');
+      const rendered = await generateImageWithValidation({
+        generate: () => PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)],
+        targetWidth: 1024,
+        targetHeight: 576,
+        maxAttempts: 2,
+        // Keep this low for placeholders; when wired to Gemini image gen we can raise.
+        minSharpness: 25,
+      });
+      const imageDataUrl =
+        rendered?.dataUrl || PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
 
       setScene({ ...clean, imageDataUrl });
       setDismissedTracks(new Set());
-      setMixerOpen(false);
+      setMixerOpen(true);
       applyMix(clean.mix);
       startTracks();
       setStep('scene');
     } catch (e) {
-      setError(e?.message || 'Something went wrong.');
-      setStep('prompt');
+      // Degrade gracefully: still enter the scene using a local heuristic mix.
+      const msg = e?.message || 'Gemini request failed.';
+      setError(msg);
+      setLoadingMsg('Falling back to local mix…');
+      const clean = fallbackSceneFromPrompt(t);
+      clean.mix = ensureAudibleMix(clean.mix);
+      const rendered = await generateImageWithValidation({
+        generate: () => PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)],
+        targetWidth: 1024,
+        targetHeight: 576,
+        maxAttempts: 2,
+        minSharpness: 25,
+      });
+      const imageDataUrl =
+        rendered?.dataUrl || PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
+      setScene({ ...clean, imageDataUrl });
+      setDismissedTracks(new Set());
+      setMixerOpen(true);
+      applyMix(clean.mix);
+      startTracks();
+      setStep('scene');
+      // Avoid leaving a persistent error toast once the scene is visible.
+      setTimeout(() => setError(null), 2500);
     }
   }, [prompt, applyMix, startTracks, ensureAudio]);
 
@@ -315,6 +464,7 @@ Output ONLY valid JSON, no markdown.`;
   }, [setTrackGain]);
 
   const ease = [0.25, 0.46, 0.45, 0.94];
+  const isPromptExpanded = String(prompt || '').trim().length > 0;
 
   // ——————————— Scene View (full-page) ———————————
   if (step === 'scene' && scene) {
@@ -459,28 +609,59 @@ Output ONLY valid JSON, no markdown.`;
 
                 <div className="prompt-center">
                   <div className="prompt-editor">
-                    <form
-                      className="prompt-pill"
+                    <motion.form
+                      layout
+                      className={`prompt-pill ${isPromptExpanded ? 'is-expanded' : 'is-collapsed'}`}
+                      animate={{
+                        borderRadius: isPromptExpanded ? 24 : 999,
+                        padding: isPromptExpanded ? '14px 12px 12px 18px' : '12px 12px 12px 18px',
+                        backgroundColor: isPromptExpanded ? 'rgba(8, 10, 12, 0.42)' : 'rgba(8, 10, 12, 0.34)',
+                      }}
+                      transition={{
+                        type: 'spring',
+                        mass: 0.8,
+                        stiffness: 360,
+                        damping: 34,
+                      }}
                       onSubmit={(e) => {
                         e.preventDefault();
                         generateScene();
                       }}
                     >
-                      <input
-                        value={prompt ?? ''}
-                        onChange={(e) => {
-                          const v = e?.target?.value;
-                          setPrompt(typeof v === 'string' ? v : '');
+                      <motion.div
+                        className={`prompt-pill-field ${isPromptExpanded ? 'is-expanded' : 'is-collapsed'}`}
+                        animate={{ height: isPromptExpanded ? 140 : 40 }}
+                        transition={{
+                          type: 'spring',
+                          mass: 0.75,
+                          stiffness: 340,
+                          damping: 32,
                         }}
-                        onFocus={ensureAudio}
-                        placeholder="Describe your atmosphere…"
-                        className="prompt-pill-input"
-                        maxLength={220}
-                      />
+                      >
+                        <textarea
+                          value={prompt ?? ''}
+                          onChange={(e) => {
+                            const v = e?.target?.value;
+                            setPrompt(typeof v === 'string' ? v : '');
+                          }}
+                          onFocus={() => {
+                            ensureAudio();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter' || e.shiftKey) return;
+                            e.preventDefault();
+                            generateScene();
+                          }}
+                          placeholder="Generate a scene + an ambient mix you can tune…"
+                          className="prompt-pill-textarea"
+                          maxLength={220}
+                          rows={4}
+                        />
+                      </motion.div>
                       <button type="submit" className="prompt-pill-submit" aria-label="Generate">
                         <ArrowRight size={18} />
                       </button>
-                    </form>
+                    </motion.form>
                   </div>
                 </div>
               </motion.div>
@@ -490,10 +671,12 @@ Output ONLY valid JSON, no markdown.`;
             {step === 'loading' && (
               <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="loading">
                 <div className="loading-matte" />
-                <motion.div className="loading-ring" animate={{ rotate: 360 }} transition={{ duration: 2.4, repeat: Infinity, ease: 'linear' }} />
-                <div className="loading-text">
-                  <div className="loading-kicker">Processing</div>
-                  <div className="loading-msg">{loadingMsg}</div>
+                <div className="loading-stack">
+                  <motion.div className="loading-ring" animate={{ rotate: 360 }} transition={{ duration: 2.4, repeat: Infinity, ease: 'linear' }} />
+                  <div className="loading-text">
+                    <div className="loading-kicker">Processing</div>
+                    <div className="loading-msg">{loadingMsg}</div>
+                  </div>
                 </div>
               </motion.div>
             )}

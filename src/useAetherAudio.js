@@ -142,7 +142,8 @@ export function useAetherAudio() {
     if (!tracks) return;
     TRACK_KEYS.forEach((k) => {
       const g = tracks[k]?.gainNode?.gain;
-      if (g) g.setTargetAtTime(sanitized[k] * 0.35, 0, 0.05); // 0.05 ≈ 50ms 量级
+      // Slightly hotter output: the procedural sources are subtle by nature.
+      if (g) g.setTargetAtTime(sanitized[k] * 0.5, 0, 0.05); // 0.05 ≈ 50ms
     });
   }, []);
 
@@ -151,7 +152,7 @@ export function useAetherAudio() {
     const v = Math.min(1, Math.max(0, Number(value) || 0));
     mixRef.current = { ...mixRef.current, [key]: v };
     const g = tracksRef.current[key]?.gainNode?.gain;
-    if (g) g.setTargetAtTime(v * 0.35, 0, 0.05);
+    if (g) g.setTargetAtTime(v * 0.5, 0, 0.05);
   }, []);
 
   const startedRef = useRef(false);

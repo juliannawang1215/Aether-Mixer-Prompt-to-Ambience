@@ -24,7 +24,7 @@ body,
   padding: 0;
   background: #e8e4df;
   min-height: 100vh;
-  font-family: 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
 }
 
 ::selection {
@@ -1032,8 +1032,17 @@ body,
   border-top-color: rgba(255, 255, 255, 0.56);
 }
 
+.loading-stack {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
 .loading-text {
-  margin-top: 18px;
   text-align: center;
 }
 
@@ -1425,40 +1434,61 @@ body,
   gap: 10px;
   padding: 12px 12px 12px 18px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 10, 12, 0.34);
   color: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(22px) saturate(1.5);
-  -webkit-backdrop-filter: blur(22px) saturate(1.5);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(14px) saturate(1.18);
+  -webkit-backdrop-filter: blur(14px) saturate(1.18);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: border-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .prompt-pill:focus-within {
   border-color: rgba(255, 255, 255, 0.26);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-.prompt-pill-input {
+.prompt-pill.is-expanded {
+  align-items: flex-end;
+  border-radius: 24px;
+  padding: 14px 12px 12px 18px;
+  background: rgba(8, 10, 12, 0.42);
+}
+
+.prompt-pill-field {
   flex: 1;
+  overflow: hidden;
+  height: 40px;
+  will-change: height;
+  contain: layout paint;
+}
+
+.prompt-pill-textarea {
+  width: 100%;
   border: 0;
   outline: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(255, 255, 255, 0.96);
   font-size: 16px;
   font-weight: 300;
   letter-spacing: 0.02em;
   line-height: 22px;
-  height: 40px;
+  resize: none;
+  padding: 9px 0;
+  margin: 0;
+  overflow: auto;
+  height: 100%;
 }
 
-.prompt-pill-input::placeholder {
-  color: rgba(255, 255, 255, 0.32);
+.prompt-pill-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.46);
 }
 
 .prompt-pill-submit {
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
+  align-self: center;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.20);
@@ -1466,7 +1496,14 @@ body,
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  transition:
+    background 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.prompt-pill.is-expanded .prompt-pill-submit {
+  align-self: flex-end;
 }
 
 .prompt-pill-submit:hover {
