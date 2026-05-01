@@ -1,39 +1,173 @@
-# Aether Mixer v4.5 — Aether Synthesis Edition
+# Aether Mixer — Prompt to Ambience
 
-基于生成式 AI 的沉浸式环境发生器。用一句描述构筑包含视觉与程序化音频的虚拟空间。
+Aether Mixer turns a short text prompt into an immersive, tunable ambient scene.
+It combines a scene parser (Gemini or local fallback), layered audio tracks, and a visual stage to create a controllable atmosphere in real time.
 
-## 功能
+---
 
-- **唤醒时空**：全屏初始化，解决浏览器自动播放限制
-- **语义解析**：Gemini 2.5 Flash 将 Prompt 转为绘图提示词、混音配置、标题与标签
-- **程序化声学**：Web Audio 实时合成 9 轨（雨/火/风/浪/鸟鸣/雷/咖啡馆/火车/白噪音），粉红噪基底、LFO、滤波；未生成场景前静音
-- **智能调音台**：仅展示权重 >0 的轨道，滑块实时调节增益（<50ms）
-- **Surprise Me**：预设意境词，点击填入输入框，需用户确认后再生成
-- **律动视觉化**：底部波纹与播放状态同步
+## What It Does
 
-## 开发
+- Parse prompt into:
+  - `mix` (track weights)
+  - `title`
+  - `tags`
+  - `imagePrompt` (currently used as metadata; visual generation pipeline is still placeholder-driven)
+- Render an immersive scene UI
+- Play and mix multi-track ambient audio in browser via Web Audio
+- Allow per-track live control in mixer
+- Provide quick QA mode: `全声音检查` / `恢复场景混音`
+
+---
+
+## Audio Model (Current)
+
+Tracks:
+
+- `rain`
+- `fire`
+- `wind`
+- `waves`
+- `birds`
+- `thunder`
+- `cafe`
+- `train`
+- `white_noise`
+- `office`
+- `city`
+- `forest`
+- `stream` (UI label: `River`)
+
+Design:
+
+- Sample-first when available (`public/samples/*`)
+- Procedural synth fallback (pink-noise + filter/LFO shaping)
+- Lazy sample loading by active track
+- Track-level gain trims for better perceptual balance
+
+---
+
+## Prompt Parsing Modes
+
+### 1) Gemini mode
+
+- Frontend calls backend endpoint: `POST /api/scene`
+- Backend route (`api/scene.js`) calls Gemini and returns structured JSON text
+- API key stays server-side
+
+### 2) Local fallback mode
+
+- Uses `fallbackSceneFromPrompt()` in `src/App.jsx`
+- Includes:
+  - keyword matching (with word boundaries for English)
+  - vibe-axis scoring
+  - preset blending (`moody_night`, `urban_mist`, `cozy_indoor`, `minimal_hush`, `nature_breath`)
+  - negative cues / sparse-mix constraints
+
+---
+
+## Quick Start
 
 ```bash
 cd aether-mixer
 cp env.example .env
-# 编辑 .env，填入 GEMINI_API_KEY（后端使用，前端不再直连 Gemini）
 npm install
-npm run dev
+npm run dev:5173
 ```
 
-## 环境变量
+Open:
 
-| 变量 | 说明 |
-|------|------|
-| `VITE_USE_GEMINI` | `1` 启用后端 `/api/scene` 调用；`0` 仅使用本地 fallback 规则 |
-| `GEMINI_API_KEY` | 推荐。仅后端读取的 Gemini API Key（更安全） |
-| `VITE_GEMINI_API_KEY` | 兼容旧配置，建议迁移到 `GEMINI_API_KEY` |
+- `http://localhost:5173`
 
-图像生成：当前为占位渐变。可后续接入 Imagen 4.0（Vertex AI）或其它服务。
+---
 
-## 技术
+## Environment Variables
 
-- Vite + React 19
-- Framer Motion（>1000ms 转场）
-- Web Audio API（程序化合成，零跨域依赖）
-- 深色+毛玻璃、极细字体
+| Variable | Required | Description |
+|---|---:|---|
+| `VITE_USE_GEMINI` | No | `1` = use backend `/api/scene`; `0` = local fallback only |
+| `GEMINI_API_KEY` | Yes (if Gemini on) | Server-side Gemini key (recommended) |
+| `VITE_GEMINI_API_KEY` | No | Legacy fallback key name, kept for compatibility |
+
+Notes:
+
+- For production, use `GEMINI_API_KEY` (server-side).
+- Do not rely on client-exposed keys.
+
+---
+
+## Scripts
+
+```bash
+npm run dev         # Vite dev server
+npm run dev:5173    # Force 5173 with auto port cleanup script
+npm run build       # Production build
+npm run preview     # Preview built app
+npm run lint        # ESLint
+```
+
+---
+
+## Deployment (Vercel Recommended)
+
+This project is Vercel-friendly and includes:
+
+- frontend static build (Vite)
+- serverless route: `api/scene.js`
+
+### Required Vercel env vars
+
+- `VITE_USE_GEMINI=1`
+- `GEMINI_API_KEY=...`
+
+If missing, app falls back to local parser flow.
+
+---
+
+## Current Limitations
+
+- Visual generation is still placeholder-based (processed via `generateImageWithValidation`)
+- Not all tracks have equally rich real-world samples
+- Some prompt semantics still depend on rule heuristics in local mode
+
+---
+
+## Project Structure
+
+```text
+src/
+  App.jsx                    # UI + scene flow + local fallback prompt parser
+  useAetherAudio.js          # audio engine, sample routing, procedural fallback
+  generateImageWithValidation.js
+
+api/
+  scene.js                   # serverless Gemini proxy endpoint
+
+public/
+  samples/                   # compressed loop assets used in runtime
+  stills/                    # static visual stills
+
+scripts/
+  make_loop.mjs              # helper to create seamless audio loops
+  start-dev-5173.mjs         # dev helper for fixed local port
+```
+
+---
+
+## Troubleshooting
+
+### No sound at first load
+
+- Browser blocks audio until user gesture.
+- Click/tap once in app and retry.
+
+### Gemini not used
+
+- Check `VITE_USE_GEMINI=1`
+- Ensure `GEMINI_API_KEY` exists in runtime environment
+- Check `/api/scene` response in network panel
+
+### Track sounds wrong
+
+- Use `全声音检查` first
+- Then move sliders one-by-one to isolate
+- If needed, regenerate loop slices from `samples-source/` using `scripts/make_loop.mjs`
