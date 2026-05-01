@@ -16,7 +16,7 @@
 ```bash
 cd aether-mixer
 cp env.example .env
-# 编辑 .env，填入 VITE_GEMINI_API_KEY（Gemini 用于解析意境与混音配置）
+# 编辑 .env，填入 GEMINI_API_KEY（后端使用，前端不再直连 Gemini）
 npm install
 npm run dev
 ```
@@ -25,7 +25,9 @@ npm run dev
 
 | 变量 | 说明 |
 |------|------|
-| `VITE_GEMINI_API_KEY` | 必填。Gemini API Key，用于语义解析与混音配置 |
+| `VITE_USE_GEMINI` | `1` 启用后端 `/api/scene` 调用；`0` 仅使用本地 fallback 规则 |
+| `GEMINI_API_KEY` | 推荐。仅后端读取的 Gemini API Key（更安全） |
+| `VITE_GEMINI_API_KEY` | 兼容旧配置，建议迁移到 `GEMINI_API_KEY` |
 
 图像生成：当前为占位渐变。可后续接入 Imagen 4.0（Vertex AI）或其它服务。
 

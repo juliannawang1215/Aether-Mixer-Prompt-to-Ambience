@@ -6,6 +6,7 @@
   "description": "Aether Mixer — 基于生成式 AI 的沉浸式环境发生器 (Aether Synthesis Edition)",
   "scripts": {
     "dev": "vite",
+    "dev:5173": "node scripts/start-dev-5173.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

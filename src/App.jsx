@@ -8,14 +8,14 @@ import { Sparkles, RotateCcw, Volume2, X, SlidersHorizontal, ArrowRight } from '
 import { useAetherAudio } from './useAetherAudio';
 import { generateImageWithValidation } from './generateImageWithValidation';
 
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-const MODEL = 'gemini-2.5-flash';
+const USE_GEMINI = import.meta.env.VITE_USE_GEMINI === '1';
 
 const PLACEHOLDER_IMAGES = ['/scene1.png', '/scene2.png'];
 
 const TRACK_LABELS = {
   rain: 'Rain', fire: 'Fire', wind: 'Wind', waves: 'Waves', birds: 'Birds',
   thunder: 'Thunder', cafe: 'Café', train: 'Train', white_noise: 'White Noise',
+  office: 'Office', city: 'City', forest: 'Forest', stream: 'River',
 };
 
 const SURPRISE_CARDS = [
@@ -79,7 +79,18 @@ function fallbackSceneFromPrompt(userPrompt) {
   const t = String(userPrompt || '').trim();
   const s = t.toLowerCase();
 
-  const hasAny = (...keys) => keys.some((k) => s.includes(k));
+  const escapeRe = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hasAny = (...keys) =>
+    keys.some((k) => {
+      const key = String(k).toLowerCase();
+      if (/[a-z]/i.test(key)) {
+        // English terms: use word boundaries to avoid false positives like
+        // "train" accidentally matching "rain".
+        return new RegExp(`\\b${escapeRe(key)}\\b`, 'i').test(s);
+      }
+      // CJK terms: boundary is not reliable; use substring match.
+      return s.includes(key);
+    });
   const clamp01 = (n) => Math.min(1, Math.max(0, n));
 
   const mix = {
@@ -92,22 +103,154 @@ function fallbackSceneFromPrompt(userPrompt) {
     cafe: 0,
     train: 0,
     white_noise: 0.12,
+    office: 0,
+    city: 0,
+    forest: 0,
+    stream: 0,
   };
 
   if (hasAny('rain', 'rainy', 'drizzle', 'storm', 'shower', 'wet')) mix.rain = 0.72;
   if (hasAny('thunder', 'lightning')) mix.thunder = 0.55;
-  if (hasAny('wind', 'breeze', 'gust')) mix.wind = 0.38;
-  if (hasAny('waves', 'ocean', 'sea', 'coast', 'beach')) mix.waves = 0.62;
-  if (hasAny('birds', 'forest', 'woods', 'trees')) mix.birds = 0.22;
+  if (hasAny('wind', 'breeze', 'gust', '风')) mix.wind = Math.max(mix.wind, 0.38);
+  if (hasAny('wave', 'waves', 'ocean', 'sea', 'coast', 'beach', 'surf', '海', '浪', '海浪')) {
+    mix.waves = Math.max(mix.waves, 0.62);
+  }
+  if (hasAny('birds', 'bird', 'jungle', '鸟')) mix.birds = Math.max(mix.birds, 0.22);
+  if (hasAny('forest', 'woods', 'trees', '森林', '树林')) {
+    mix.forest = Math.max(mix.forest, 0.50);
+    mix.birds = Math.max(mix.birds, 0.18);
+  }
+  if (hasAny('stream', 'river', 'brook', 'creek', '溪', '河', '流水')) {
+    mix.stream = Math.max(mix.stream, 0.55);
+  }
+  // Generic "water" cue — don't swamp the mix; let more specific keys (rain /
+  // waves / stream) take priority, but if none of those fired, give `stream`
+  // a gentle nudge so the scene at least has audible water.
+  if (hasAny('water') && mix.rain === 0 && mix.waves === 0 && mix.stream === 0) {
+    mix.stream = 0.4;
+  }
   if (hasAny('fire', 'fireplace', 'hearth', 'candle')) mix.fire = 0.48;
   if (hasAny('cafe', 'coffee', 'espresso', 'barista')) mix.cafe = 0.42;
   if (hasAny('train', 'station', 'subway', 'rail')) mix.train = 0.50;
+  if (hasAny('office', 'desk', 'coworking', '工位', '办公')) mix.office = 0.50;
+  if (hasAny('street', 'city', 'traffic', '街', '城市', '路口')) mix.city = 0.55;
   if (hasAny('snow', 'winter', 'blizzard', 'frost')) mix.wind = Math.max(mix.wind, 0.24);
 
   // If it's quiet / minimal, bias toward white noise + gentle wind.
   if (hasAny('quiet', 'silent', 'hush', 'minimal', 'calm')) {
     mix.white_noise = Math.max(mix.white_noise, 0.22);
     mix.wind = Math.max(mix.wind, 0.16);
+  }
+
+  // Vibe layer: score latent "mood axes", then map them to audio archetypes.
+  const scoreHits = (...keys) => keys.reduce((acc, k) => acc + (hasAny(k) ? 1 : 0), 0);
+  const axis = {
+    wet: scoreHits('humid', 'moist', 'damp', 'fog', 'foggy', 'mist', 'hazy', '潮', '潮湿', '湿', '雾', '反光', '水汽', '玻璃', 'window', 'rain on glass'),
+    night: scoreHits('night', 'midnight', 'late', 'dusk', 'twilight', 'blue hour', '夜', '深夜', '傍晚', '黄昏', '凌晨'),
+    urban: scoreHits('urban', 'city', 'street', 'neon', 'traffic', '城市', '都市', '街', '路灯', '路口', '地面反光'),
+    nature: scoreHits('nature', 'outdoor', 'woods', 'forest', 'mountain', 'natural', '自然', '森林', '树林', '山', '户外'),
+    warm: scoreHits('warm', 'cozy', 'cosy', 'candle', 'lamp', 'cup', '暖', '温', '台灯', '烛光', '杯子'),
+    focus: scoreHits('focus', 'study', 'reading', 'typing', 'workspace', '专注', '阅读', '打字', '办公', '工位'),
+    lonely: scoreHits('alone', 'empty', 'waiting', 'hollow', '无人', '没人', '离开', '等待', '消息'),
+    flow: scoreHits('flow', 'drift', 'breath', '流动', '呼吸感', '缓慢', 'slow'),
+    quiet: scoreHits('quiet', 'silent', 'hush', 'minimal', 'calm', '安静', '克制', '留白'),
+    cold: scoreHits('cold', 'chill', 'frost', 'winter', 'snow', '微冷', '冷', '冬', '雪'),
+  };
+  const n01 = (v, d = 3) => Math.min(1, v / d);
+  const wet = n01(axis.wet);
+  const night = n01(axis.night);
+  const urban = n01(axis.urban);
+  const nature = n01(axis.nature);
+  const warm = n01(axis.warm);
+  const focus = n01(axis.focus);
+  const lonely = n01(axis.lonely);
+  const flow = n01(axis.flow);
+  const quiet = n01(axis.quiet);
+  const cold = n01(axis.cold);
+
+  // Preset layer: map vibes to a small set of curated archetypes, then blend.
+  const PRESETS = {
+    moody_night: { rain: 0.52, city: 0.38, wind: 0.24, white_noise: 0.14 },
+    urban_mist: { city: 0.52, rain: 0.34, white_noise: 0.16 },
+    cozy_indoor: { cafe: 0.46, fire: 0.28, office: 0.18, white_noise: 0.12 },
+    minimal_hush: { white_noise: 0.22, wind: 0.14 },
+    nature_breath: { forest: 0.48, stream: 0.36, birds: 0.20, wind: 0.16 },
+  };
+  const blendPreset = (presetName, weight) => {
+    if (!presetName || weight <= 0) return;
+    const p = PRESETS[presetName];
+    if (!p) return;
+    for (const [k, v] of Object.entries(p)) {
+      mix[k] = Math.max(mix[k], v * Math.min(1, Math.max(0, weight)));
+    }
+  };
+
+  blendPreset('moody_night', wet * 0.65 + night * 0.55);
+  blendPreset('urban_mist', urban * 0.75 + wet * 0.25);
+  blendPreset('cozy_indoor', warm * 0.8 + focus * 0.25);
+  blendPreset('nature_breath', nature * 0.85 + flow * 0.4);
+  blendPreset('minimal_hush', quiet * 0.85 + lonely * 0.35);
+
+  // Continuous tuning on top of presets.
+  if (wet > 0) mix.rain = Math.max(mix.rain, 0.20 + wet * 0.22 + night * 0.08);
+  if (urban > 0) mix.city = Math.max(mix.city, 0.20 + urban * 0.24 + night * 0.08);
+  if (nature > 0) {
+    mix.forest = Math.max(mix.forest, 0.20 + nature * 0.24);
+    mix.birds = Math.max(mix.birds, 0.10 + nature * 0.12);
+  }
+  if (flow > 0 && (nature > 0 || wet > 0 || hasAny('water ambience', '流水感'))) {
+    mix.stream = Math.max(mix.stream, 0.20 + flow * 0.22 + nature * 0.10);
+  }
+  if (focus > 0) mix.office = Math.max(mix.office, 0.20 + focus * 0.26);
+  if (warm > 0) {
+    mix.cafe = Math.max(mix.cafe, 0.18 + warm * 0.24);
+    mix.fire = Math.max(mix.fire, 0.08 + warm * 0.18);
+  }
+
+  // Secondary shaping.
+  if (lonely > 0) mix.wind = Math.max(mix.wind, 0.10 + lonely * 0.22);
+  if (cold > 0) mix.wind = Math.max(mix.wind, 0.14 + cold * 0.22);
+  mix.white_noise = Math.max(mix.white_noise, 0.08 + quiet * 0.16 + focus * 0.05);
+
+  // Negative cues / constraints for vague prompts.
+  const avoidOutdoor = hasAny('不要太户外', 'not too outdoor', 'less outdoor', '室内一点');
+  const avoidFlow = hasAny('不要太明显', 'subtle', 'less movement', '不要太流动', '轻一点');
+  const avoidBusy = hasAny('不要太吵', 'not too busy', 'calm', '安静', '克制');
+
+  if (avoidOutdoor) {
+    mix.forest *= 0.45;
+    mix.birds *= 0.4;
+    mix.stream *= 0.55;
+  }
+  if (avoidFlow) {
+    mix.stream *= 0.55;
+    mix.waves *= 0.7;
+    mix.wind *= 0.8;
+  }
+  if (avoidBusy) {
+    mix.city *= 0.72;
+    mix.office *= 0.75;
+    mix.train *= 0.7;
+    mix.thunder *= 0.75;
+  }
+
+  // For truly vague / mood-only prompts, keep the mix sparse (2-3 principal tracks).
+  const explicitSceneHits = scoreHits(
+    'rain', 'thunder', 'wind', 'waves', 'ocean', 'sea', 'beach',
+    'fire', 'cafe', 'train', 'station', 'subway', 'office', 'city',
+    'forest', 'birds', 'stream', 'river', 'mountain', '街', '城市', '森林', '溪', '河', '办公'
+  );
+  const vagueIntent = hasAny('vibe', 'mood', '不具体', '氛围', '情绪', '感觉', '像', '不是很具体');
+  if (vagueIntent || explicitSceneHits <= 1) {
+    const principal = Object.entries(mix)
+      .filter(([k, v]) => k !== 'white_noise' && Number(v) > 0.001)
+      .sort((a, b) => b[1] - a[1]);
+    const keep = new Set(principal.slice(0, 3).map(([k]) => k));
+    for (const [k] of principal.slice(3)) mix[k] = 0;
+    // Preserve a gentle bed if the sparse set has no broad ambience track.
+    if (![...keep].some((k) => ['rain', 'city', 'forest', 'stream', 'waves', 'office', 'cafe'].includes(k))) {
+      mix.white_noise = Math.max(mix.white_noise, 0.16);
+    }
   }
 
   // If no strong cues, keep it softly neutral.
@@ -128,7 +271,11 @@ function fallbackSceneFromPrompt(userPrompt) {
   if (mix.fire > 0.25) tags.push('fire');
   if (mix.cafe > 0.25) tags.push('cafe');
   if (mix.train > 0.25) tags.push('train');
-  if (mix.birds > 0.18) tags.push('forest');
+  if (mix.office > 0.25) tags.push('office');
+  if (mix.city > 0.25) tags.push('city');
+  if (mix.forest > 0.25) tags.push('forest');
+  if (mix.stream > 0.25) tags.push('river');
+  if (mix.birds > 0.18 && !tags.includes('forest')) tags.push('birds');
   if (tags.length < 2) tags.push('hush');
   if (tags.length < 3) tags.push('drift');
 
@@ -170,6 +317,8 @@ export default function App() {
   const [dismissedTracks, setDismissedTracks] = useState(new Set());
   const [mixerOpen, setMixerOpen] = useState(false);
   const audioInitRef = useRef(false);
+  const sceneBaseMixRef = useRef(null);
+  const allCheckBackupMixRef = useRef(null);
 
   const { init, applyMix, setTrackGain, startTracks, TRACK_KEYS } = useAetherAudio();
 
@@ -337,40 +486,23 @@ export default function App() {
       setTimeout(() => setError(null), 3000);
       return;
     }
-    if (!API_KEY) {
-      setError('Missing Gemini API key (VITE_GEMINI_API_KEY).');
-      setStep('prompt');
-      return;
-    }
     ensureAudio();
     setStep('loading');
     setError(null);
     setLoadingMsg('Parsing the mood…');
 
     try {
-      const sys = `You are an atmosphere designer. For the user's scene description, output a JSON object with:
-- imagePrompt: detailed English image prompt (lighting, ambiance, texture, no people), one paragraph.
-- mix: object with keys rain,fire,wind,waves,birds,thunder,cafe,train,white_noise. Each value 0.0 to 1.0. Only set non-zero values for sounds that genuinely fit the scene.
-- title: a short, evocative English title, 1–3 words.
-- tags: array of 2–6 short English atmosphere tags.
-Output ONLY valid JSON, no markdown.`;
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
-      const payload = {
-        contents: [{ parts: [{ text: `${sys}\n\nUser: ${t}` }] }],
-        generationConfig: { responseMimeType: 'application/json' },
-      };
-
+      if (!USE_GEMINI) throw new Error('LOCAL_ONLY');
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       let data;
       let lastStatus = 0;
 
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) setLoadingMsg(`Retrying… (${attempt + 1}/3)`);
-        const res = await fetch(url, {
+        const res = await fetch('/api/scene', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ prompt: t }),
         });
         lastStatus = res.status;
         try {
@@ -394,7 +526,7 @@ Output ONLY valid JSON, no markdown.`;
         await sleep(400 * Math.pow(2, attempt));
       }
 
-      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const raw = data?.text;
       if (!raw || typeof raw !== 'string') throw new Error('No content returned.');
 
       setLoadingMsg('Building your space…');
@@ -412,6 +544,8 @@ Output ONLY valid JSON, no markdown.`;
       const imageDataUrl =
         rendered?.dataUrl || PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
 
+      sceneBaseMixRef.current = { ...clean.mix };
+      allCheckBackupMixRef.current = null;
       setScene({ ...clean, imageDataUrl });
       setDismissedTracks(new Set());
       setMixerOpen(true);
@@ -421,8 +555,8 @@ Output ONLY valid JSON, no markdown.`;
     } catch (e) {
       // Degrade gracefully: still enter the scene using a local heuristic mix.
       const msg = e?.message || 'Gemini request failed.';
-      setError(msg);
-      setLoadingMsg('Falling back to local mix…');
+      if (msg && msg !== 'LOCAL_ONLY') setError(msg);
+      setLoadingMsg('Building a local mix…');
       const clean = fallbackSceneFromPrompt(t);
       clean.mix = ensureAudibleMix(clean.mix);
       const rendered = await generateImageWithValidation({
@@ -434,6 +568,8 @@ Output ONLY valid JSON, no markdown.`;
       });
       const imageDataUrl =
         rendered?.dataUrl || PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
+      sceneBaseMixRef.current = { ...clean.mix };
+      allCheckBackupMixRef.current = null;
       setScene({ ...clean, imageDataUrl });
       setDismissedTracks(new Set());
       setMixerOpen(true);
@@ -450,6 +586,8 @@ Output ONLY valid JSON, no markdown.`;
     setScene(null);
     setPrompt('');
     setMixerOpen(false);
+    sceneBaseMixRef.current = null;
+    allCheckBackupMixRef.current = null;
     applyMix(Object.fromEntries(TRACK_KEYS.map((k) => [k, 0])));
   }, [applyMix, TRACK_KEYS]);
 
@@ -462,6 +600,47 @@ Output ONLY valid JSON, no markdown.`;
     setScene((prev) => prev ? { ...prev, mix: { ...prev.mix, [key]: 0 } } : prev);
     setDismissedTracks((prev) => new Set(prev).add(key));
   }, [setTrackGain]);
+
+  const enableAllTracksForCheck = useCallback(() => {
+    const auditionProfile = {
+      rain: 0.55,
+      fire: 0.35,
+      wind: 0.32,
+      waves: 0.45,
+      birds: 0.34,
+      thunder: 0.72,
+      cafe: 0.92,
+      train: 0.88,
+      white_noise: 0.08,
+      office: 0.94,
+      city: 0.82,
+      forest: 0.46,
+      stream: 0.86,
+    };
+    const checkMix = Object.fromEntries(TRACK_KEYS.map((k) => [k, auditionProfile[k] ?? 0.45]));
+    setScene((prev) => {
+      if (!prev) return prev;
+      if (!allCheckBackupMixRef.current) {
+        allCheckBackupMixRef.current = { ...prev.mix };
+      }
+      return { ...prev, mix: checkMix };
+    });
+    setDismissedTracks(new Set());
+    applyMix(checkMix);
+    startTracks();
+  }, [TRACK_KEYS, applyMix, startTracks]);
+
+  const restoreSceneMix = useCallback(() => {
+    const backupMix = allCheckBackupMixRef.current || sceneBaseMixRef.current || {};
+    const restored = Object.fromEntries(
+      TRACK_KEYS.map((k) => [k, Math.min(1, Math.max(0, Number(backupMix?.[k]) || 0))])
+    );
+    setScene((prev) => (prev ? { ...prev, mix: restored } : prev));
+    setDismissedTracks(new Set());
+    applyMix(restored);
+    startTracks();
+    allCheckBackupMixRef.current = null;
+  }, [TRACK_KEYS, applyMix, startTracks]);
 
   const ease = [0.25, 0.46, 0.45, 0.94];
   const isPromptExpanded = String(prompt || '').trim().length > 0;
@@ -476,7 +655,6 @@ Output ONLY valid JSON, no markdown.`;
 
         <div className="scene-hud">
           <div className="scene-hud-left">
-            <div className="scene-chip">AETHER MIXER</div>
             <h1 className="scene-h1">{scene.title}</h1>
             {Array.isArray(scene.tags) && scene.tags.length > 0 && (
               <div className="scene-tags" aria-label="Atmosphere tags">
@@ -521,6 +699,14 @@ Output ONLY valid JSON, no markdown.`;
                   <div className="dock-title">
                     <Volume2 size={12} />
                     Mixer
+                  </div>
+                  <div className="dock-actions" role="group" aria-label="全声音检查控制">
+                    <button type="button" className="dock-action-btn is-primary" onClick={enableAllTracksForCheck}>
+                      全声音检查
+                    </button>
+                    <button type="button" className="dock-action-btn" onClick={restoreSceneMix}>
+                      恢复场景混音
+                    </button>
                   </div>
                   {activeTracks.length === 0 ? (
                     <div className="dock-empty">No active tracks</div>

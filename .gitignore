@@ -22,3 +22,8 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# Audio source masters (re-encode targets live in public/samples/*_loop.m4a)
+samples-source/
+.vercel
+c3dgs/
