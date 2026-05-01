@@ -316,6 +316,7 @@ export default function App() {
   const [scene, setScene] = useState(null);
   const [dismissedTracks, setDismissedTracks] = useState(new Set());
   const [mixerOpen, setMixerOpen] = useState(false);
+  const [isPromptFocused, setIsPromptFocused] = useState(false);
   const audioInitRef = useRef(false);
   const sceneBaseMixRef = useRef(null);
   const allCheckBackupMixRef = useRef(null);
@@ -643,7 +644,8 @@ export default function App() {
   }, [TRACK_KEYS, applyMix, startTracks]);
 
   const ease = [0.25, 0.46, 0.45, 0.94];
-  const isPromptExpanded = String(prompt || '').trim().length > 0;
+  const hasPromptContent = String(prompt || '').trim().length > 0;
+  const isPromptExpanded = isPromptFocused || hasPromptContent;
 
   // ——————————— Scene View (full-page) ———————————
   if (step === 'scene' && scene) {
@@ -795,35 +797,15 @@ export default function App() {
 
                 <div className="prompt-center">
                   <div className="prompt-editor">
-                    <motion.form
-                      layout
-                      className={`prompt-pill ${isPromptExpanded ? 'is-expanded' : 'is-collapsed'}`}
-                      animate={{
-                        borderRadius: isPromptExpanded ? 24 : 999,
-                        padding: isPromptExpanded ? '14px 12px 12px 18px' : '12px 12px 12px 18px',
-                        backgroundColor: isPromptExpanded ? 'rgba(8, 10, 12, 0.42)' : 'rgba(8, 10, 12, 0.34)',
-                      }}
-                      transition={{
-                        type: 'spring',
-                        mass: 0.8,
-                        stiffness: 360,
-                        damping: 34,
-                      }}
+                    <form
+                      className={`prompt-pill ${isPromptExpanded ? 'is-expanded' : ''}`}
+                      data-expanded={isPromptExpanded ? 'true' : 'false'}
                       onSubmit={(e) => {
                         e.preventDefault();
                         generateScene();
                       }}
                     >
-                      <motion.div
-                        className={`prompt-pill-field ${isPromptExpanded ? 'is-expanded' : 'is-collapsed'}`}
-                        animate={{ height: isPromptExpanded ? 140 : 40 }}
-                        transition={{
-                          type: 'spring',
-                          mass: 0.75,
-                          stiffness: 340,
-                          damping: 32,
-                        }}
-                      >
+                      <div className="prompt-pill-field">
                         <textarea
                           value={prompt ?? ''}
                           onChange={(e) => {
@@ -831,8 +813,10 @@ export default function App() {
                             setPrompt(typeof v === 'string' ? v : '');
                           }}
                           onFocus={() => {
+                            setIsPromptFocused(true);
                             ensureAudio();
                           }}
+                          onBlur={() => setIsPromptFocused(false)}
                           onKeyDown={(e) => {
                             if (e.key !== 'Enter' || e.shiftKey) return;
                             e.preventDefault();
@@ -843,11 +827,15 @@ export default function App() {
                           maxLength={220}
                           rows={4}
                         />
-                      </motion.div>
-                      <button type="submit" className="prompt-pill-submit" aria-label="Generate">
+                      </div>
+                      <button
+                        type="submit"
+                        className={`prompt-pill-submit ${isPromptExpanded ? 'is-expanded' : ''}`}
+                        aria-label="Generate"
+                      >
                         <ArrowRight size={18} />
                       </button>
-                    </motion.form>
+                    </form>
                   </div>
                 </div>
               </motion.div>
