@@ -1451,13 +1451,13 @@ body,
 
 /* Prompt foreground: minimal single-line input + icon button */
 .prompt-pill {
-  --pill-shape-duration: 340ms;
-  --pill-shape-ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --pill-field-duration: 380ms;
-  --pill-field-ease: cubic-bezier(0.42, 0, 0.2, 1);
-  --submit-move-duration: 300ms;
-  --submit-move-ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --submit-trail-delay: 24ms;
+  --pill-shape-duration: 150ms;
+  --pill-shape-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --pill-field-duration: 170ms;
+  --pill-field-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --submit-move-duration: 130ms;
+  --submit-move-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --submit-trail-delay: 0ms;
   --submit-shift-y: -1px;
   width: 100%;
   display: flex;
@@ -1484,13 +1484,13 @@ body,
 }
 
 .prompt-pill.is-expanded {
-  --pill-shape-duration: 190ms;
-  --pill-shape-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --pill-field-duration: 220ms;
-  --pill-field-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --submit-move-duration: 180ms;
-  --submit-move-ease: cubic-bezier(0.24, 1, 0.34, 1);
-  --submit-trail-delay: 12ms;
+  --pill-shape-duration: 180ms;
+  --pill-shape-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --pill-field-duration: 210ms;
+  --pill-field-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --submit-move-duration: 160ms;
+  --submit-move-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --submit-trail-delay: 0ms;
   --submit-shift-y: 0px;
   border-radius: 24px;
   padding: 14px 12px 12px 18px;
@@ -1501,7 +1501,7 @@ body,
   flex: 1;
   overflow: hidden;
   height: 42px;
-  will-change: height;
+  transform-origin: top;
   transition: height var(--pill-field-duration) var(--pill-field-ease);
 }
 
@@ -1549,7 +1549,7 @@ body,
   transform: translateY(var(--submit-shift-y));
   will-change: transform;
   transition-property: background, border-color, transform;
-  transition-duration: 260ms, 260ms, var(--submit-move-duration);
+  transition-duration: 150ms, 150ms, var(--submit-move-duration);
   transition-timing-function:
     cubic-bezier(0.16, 1, 0.3, 1),
     cubic-bezier(0.16, 1, 0.3, 1),
@@ -1569,7 +1569,7 @@ body,
 
 .prompt-pill-submit:active {
   transition-delay: 0ms, 0ms, 0ms;
-  transform: translateY(var(--submit-shift-y)) scale(0.98);
+  transform: translateY(var(--submit-shift-y)) scale(0.96);
 }
 
 @media (prefers-reduced-motion: reduce) {
