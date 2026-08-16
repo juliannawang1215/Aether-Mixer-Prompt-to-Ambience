@@ -2,15 +2,16 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import sceneHandler from './api/scene.js'
+import imageHandler from './api/image.js'
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     {
-      name: 'scene-api-dev-middleware',
+      name: 'api-dev-middleware',
       configureServer(server) {
-        server.middlewares.use('/api/scene', async (req, res) => {
+        const handleApi = (handler) => async (req, res) => {
           if (req.method !== 'POST') {
             res.statusCode = 405;
             res.setHeader('Content-Type', 'application/json');
@@ -43,11 +44,14 @@ export default defineConfig({
             },
           };
 
-          await sceneHandler(req, response);
+          await handler(req, response);
           res.statusCode = response.statusCode;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(response.body ?? {}));
-        });
+        };
+
+        server.middlewares.use('/api/scene', handleApi(sceneHandler));
+        server.middlewares.use('/api/image', handleApi(imageHandler));
       },
     },
   ],

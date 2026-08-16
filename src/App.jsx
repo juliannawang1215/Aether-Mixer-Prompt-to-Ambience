@@ -535,11 +535,19 @@ export default function App() {
       clean.mix = ensureAudibleMix(clean.mix);
       setLoadingMsg('Rendering the scene…');
       const rendered = await generateImageWithValidation({
-        generate: () => PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)],
+        generate: async () => {
+          const imgRes = await fetch('/api/image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: clean.imagePrompt || t }),
+          });
+          const imgData = await imgRes.json();
+          if (!imgRes.ok || imgData.error) throw new Error(imgData?.error?.message || 'Image generation failed');
+          return imgData.dataUrl;
+        },
         targetWidth: 1024,
         targetHeight: 576,
         maxAttempts: 2,
-        // Keep this low for placeholders; when wired to Gemini image gen we can raise.
         minSharpness: 25,
       });
       const imageDataUrl =
