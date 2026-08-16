@@ -10,7 +10,16 @@ import { generateImageWithValidation } from './generateImageWithValidation';
 
 const USE_GEMINI = import.meta.env.VITE_USE_GEMINI === '1';
 
-const PLACEHOLDER_IMAGES = ['/scene1.png', '/scene2.png'];
+const PLACEHOLDER_IMAGES = [
+  '/card_cozy_room.png',
+  '/card_snow_window.png',
+  '/card_cabin_snow.png',
+  '/card_rainy_forest.png',
+  '/card_misty_mountain.png',
+  '/card_coffee_shop.png',
+  '/scene1.png',
+  '/scene2.png'
+];
 
 const TRACK_LABELS = {
   rain: 'Rain', fire: 'Fire', wind: 'Wind', waves: 'Waves', birds: 'Birds',
