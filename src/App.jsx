@@ -10,58 +10,76 @@ import { generateImageWithValidation } from './generateImageWithValidation';
 
 const USE_GEMINI = import.meta.env.VITE_USE_GEMINI === '1';
 
-const PLACEHOLDER_IMAGES = [
-  '/card_cozy_room.png',
-  '/card_snow_window.png',
-  '/card_cabin_snow.png',
-  '/card_rainy_forest.png',
-  '/card_misty_mountain.png',
-  '/card_coffee_shop.png',
-  '/scene1.png',
-  '/scene2.png'
+const SURPRISE_CARDS = [
+  // Newly uploaded high-res 2K stills
+  { text: 'Warm fireplace glowing in a minimal interior, winter dusk outside', img: '/stills/still-fireplace-minimal.png' },
+  { text: 'Snowy European street outside a warm café window, amber lamplight', img: '/stills/still-cafe-snow-street.png' },
+  { text: 'Quiet snowy residential street through the window sill, warm mug', img: '/stills/still-snow-suburb-window.png' },
+  { text: 'Desk by the rain window, lush green forest outside', img: '/stills/still-rain-desk-forest.png' },
+  { text: 'Alpine mountain peak rising over green meadow and rustic cabin', img: '/stills/still-alpine-mountains.png' },
+  { text: 'Sunset by the window, playing upright piano, city skyline', img: '/stills/still-piano-sunset.png' },
+  { text: 'Vinyl turntable spinning, dusk skyline through the window', img: '/stills/still-vinyl-dusk.png' },
+  { text: 'Rainy street corner café at night, warm reflections', img: '/stills/still-rainy-corner-cafe.png' },
+  { text: 'Living room with floor-to-ceiling glass, snowy forest outside', img: '/stills/still-snow-living-room.png' },
+  { text: 'Reading on a leather sofa, full wall bookshelf, quiet afternoon', img: '/stills/still-reading-bookshelf.png' },
+
+  // Additional curated stills
+  { text: 'Foggy train platform, distant hum, wet air', img: '/stills/still-train-fog-1.png' },
+  { text: 'Cabin at blue hour, lights on, snowfield', img: '/stills/still-cabin-snow-2.png' },
+  { text: 'Still lake at dawn, low fog, distant ridge', img: '/stills/still-lake-dawn-1.png' },
+  { text: 'Reading chair and lamp, bookshelf hush', img: '/stills/still-chair-library-1.png' },
+  { text: 'Convenience store glow in the rain, empty road', img: '/stills/still-convenience-rain-1.png' },
+  { text: 'Empty station, mist and sodium lights', img: '/stills/still-train-station-2.png' },
 ];
+
+const PLACEHOLDER_IMAGES = SURPRISE_CARDS.map((c) => c.img);
+
+function pickMatchingStill(promptText) {
+  const s = String(promptText || '').toLowerCase();
+  const matches = [];
+
+  const add = (...imgs) => matches.push(...imgs);
+
+  if (/rain|cafe|coffee|drizzle|雨|咖啡/.test(s)) {
+    add('/stills/still-rainy-corner-cafe.png', '/stills/still-cafe-snow-street.png', '/stills/still-rain-desk-forest.png');
+  }
+  if (/desk|work|write|study|forest|green|桌|书桌|工位|森林/.test(s)) {
+    add('/stills/still-rain-desk-forest.png');
+  }
+  if (/fire|fireplace|warm|hearth|火|壁炉|炉/.test(s)) {
+    add('/stills/still-fireplace-minimal.png');
+  }
+  if (/snow|winter|suburb|street|window|雪|冬|窗|街/.test(s)) {
+    add('/stills/still-cafe-snow-street.png', '/stills/still-snow-suburb-window.png', '/stills/still-snow-living-room.png');
+  }
+  if (/mountain|alpine|meadow|peak|nature|cabin|山|雪山|木屋|自然/.test(s)) {
+    add('/stills/still-alpine-mountains.png');
+  }
+  if (/piano|sunset|music|琴|钢琴|夕阳|日落/.test(s)) {
+    add('/stills/still-piano-sunset.png');
+  }
+  if (/vinyl|turntable|dusk|night|city|黑胶|唱片|音乐|黄昏/.test(s)) {
+    add('/stills/still-vinyl-dusk.png');
+  }
+  if (/book|library|read|shelf|sofa|书|阅读|书架|沙发/.test(s)) {
+    add('/stills/still-reading-bookshelf.png');
+  }
+  if (/train|station|subway|fog|车|站|雾/.test(s)) {
+    add('/stills/still-train-fog-1.png', '/stills/still-train-station-2.png');
+  }
+  if (/lake|dawn|lake|晨|湖/.test(s)) {
+    add('/stills/still-lake-dawn-1.png');
+  }
+
+  const pool = matches.length > 0 ? matches : PLACEHOLDER_IMAGES;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 const TRACK_LABELS = {
   rain: 'Rain', fire: 'Fire', wind: 'Wind', waves: 'Waves', birds: 'Birds',
   thunder: 'Thunder', cafe: 'Café', train: 'Train', white_noise: 'White Noise',
   office: 'Office', city: 'City', forest: 'Forest', stream: 'River',
 };
-
-const SURPRISE_CARDS = [
-  // Local stills
-  { text: 'A quiet interior, warm lamp glow, soft shadows', img: '/card_cozy_room.png' },
-  { text: 'Snow falling outside a window, thick glass and hush', img: '/card_snow_window.png' },
-  { text: 'A small cabin in snow, distant wind and pine', img: '/card_cabin_snow.png' },
-  { text: 'Rainy forest, wet leaves, muted daylight', img: '/card_rainy_forest.png' },
-  { text: 'Misty mountains, cold air, low clouds', img: '/card_misty_mountain.png' },
-  { text: 'Winter café window, amber lights, drizzle', img: '/card_coffee_shop.png' },
-  { text: 'Slow camera drift across a still frame', img: '/scene1.png' },
-  { text: 'A second still, slightly different mood', img: '/scene2.png' },
-
-  // Added real stills (copied into public/stills)
-  { text: 'Foggy train platform, distant hum, wet air', img: '/stills/still-train-fog-1.png' },
-  { text: 'Snow on window, warm interior, quiet street', img: '/stills/still-snow-window-2.png' },
-  { text: 'Rainy café table by the window, soft amber light', img: '/stills/still-rain-cafe-1.png' },
-  { text: 'Cabin at blue hour, lights on, snowfield', img: '/stills/still-cabin-snow-2.png' },
-  { text: 'Rain on glass, forest outside, muted tones', img: '/stills/still-rain-window-3.png' },
-  { text: 'Empty station, mist and sodium lights', img: '/stills/still-train-station-2.png' },
-  { text: 'Still lake at dawn, low fog, distant ridge', img: '/stills/still-lake-dawn-1.png' },
-  { text: 'Piano by a window at dusk, city lights far away', img: '/stills/still-piano-window-1.png' },
-  { text: 'Reading chair and lamp, bookshelf hush', img: '/stills/still-chair-library-1.png' },
-  { text: 'A lone house in a snowfield at twilight', img: '/stills/still-house-snowfield-1.png' },
-  { text: 'Rainy street, reflections, late night transit', img: '/stills/still-rain-street-1.png' },
-  { text: 'Convenience store glow in the rain, empty road', img: '/stills/still-convenience-rain-1.png' },
-  { text: 'Books wall, afternoon light, quiet reading', img: '/stills/still-books-wall-1.png' },
-  { text: 'Snowy street café, warm window glow', img: '/stills/still-cafe-snow-street-1.png' },
-  { text: 'Turntable at dusk, city beyond the glass', img: '/stills/still-turntable-dusk-1.png' },
-  { text: 'Desk by a rainy window, green outside', img: '/stills/still-rain-desk-1.png' },
-  { text: 'Soft sunrise, someone playing piano', img: '/stills/still-piano-sunrise-1.png' },
-  { text: 'Rainy corner café at night, reflections', img: '/stills/still-rainy-corner-cafe-1.png' },
-  { text: 'Minimal fireplace room, winter stillness', img: '/stills/still-snow-fireplace-1.png' },
-  { text: 'Sofa by a snow window, calm lamplight', img: '/stills/still-snow-sofa-window-1.png' },
-  { text: 'Mountains and field, overcast and wide', img: '/stills/still-mountains-field-1.png' },
-  { text: 'Snow suburb outside a window, night hush', img: '/stills/still-snow-suburb-window-1.png' },
-];
 
 function sanitizeScenePayload(raw) {
   let o;
@@ -560,7 +578,7 @@ export default function App() {
         minSharpness: 25,
       });
       const imageDataUrl =
-        rendered?.dataUrl || PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
+        rendered?.dataUrl || pickMatchingStill(clean.imagePrompt || t);
 
       sceneBaseMixRef.current = { ...clean.mix };
       allCheckBackupMixRef.current = null;
@@ -577,15 +595,8 @@ export default function App() {
       setLoadingMsg('Building a local mix…');
       const clean = fallbackSceneFromPrompt(t);
       clean.mix = ensureAudibleMix(clean.mix);
-      const rendered = await generateImageWithValidation({
-        generate: () => PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)],
-        targetWidth: 1024,
-        targetHeight: 576,
-        maxAttempts: 2,
-        minSharpness: 25,
-      });
-      const imageDataUrl =
-        rendered?.dataUrl || PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
+      const matchedStill = pickMatchingStill(t);
+      const imageDataUrl = matchedStill;
       sceneBaseMixRef.current = { ...clean.mix };
       allCheckBackupMixRef.current = null;
       setScene({ ...clean, imageDataUrl });
@@ -719,12 +730,12 @@ export default function App() {
                     <Volume2 size={12} />
                     Mixer
                   </div>
-                  <div className="dock-actions" role="group" aria-label="全声音检查控制">
+                  <div className="dock-actions" role="group" aria-label="Audio audition controls">
                     <button type="button" className="dock-action-btn is-primary" onClick={enableAllTracksForCheck}>
-                      全声音检查
+                      Audition All
                     </button>
                     <button type="button" className="dock-action-btn" onClick={restoreSceneMix}>
-                      恢复场景混音
+                      Restore Mix
                     </button>
                   </div>
                   {activeTracks.length === 0 ? (
@@ -787,7 +798,7 @@ export default function App() {
                   {driftRef.current.tiles.map((tile, i) => {
                     const d = driftRef.current;
                     const pool = SURPRISE_CARDS;
-                    const img = pool[(tile?.imgIndex ?? i) % Math.max(1, pool.length)]?.img ?? '/scene1.png';
+                    const img = pool[(tile?.imgIndex ?? i) % Math.max(1, pool.length)]?.img ?? '/stills/still-lake-dawn-1.png';
                     const xN = tile?.x ?? ((i % 7) * 0.12 + 0.10);
                     const yN = tile?.y ?? (Math.floor(i / 7) * 0.12 + 0.10);
                     const depth = tile?.depth ?? 0.65;
